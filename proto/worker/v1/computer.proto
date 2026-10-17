@@ -1,0 +1,123 @@
+syntax = "proto3";
+
+package worker.v1;
+
+option go_package = "github.com/easydev-org/easyagent-sandbox-ext/gen/worker/v1;workerv1";
+
+// ComputerService is the worker-native GUI-automation surface. It replaces the
+// client-side command assembly that used to live in the workspace extension:
+// the worker knows its own platform (X11 / Wayland / Windows / macOS / Android /
+// iOS) and picks the right driver, so the client stays platform-agnostic.
+//
+// Every call is bearer-gated like WorkerService. The operations are thin
+// wrappers over the platform tools (the `xa11y` CLI, `wtype`/`grim` on Wayland,
+// `adb` on Android, `simctl`/`idb` on iOS).
+service ComputerService {
+  // Info reports the resolved platform/driver and available tools.
+  rpc Info(ComputerInfoRequest) returns (ComputerInfoResponse);
+  // Apps lists the running GUI applications (Android: the foreground package).
+  rpc Apps(ComputerAppsRequest) returns (ComputerAppsResponse);
+  // Snapshot dumps the accessibility tree (already formatted for a model).
+  rpc Snapshot(ComputerSnapshotRequest) returns (ComputerSnapshotResponse);
+  // Find matches elements by selector; output is pretty|bounds|center.
+  rpc Find(ComputerFindRequest) returns (ComputerFindResponse);
+  // Action performs an accessibility action on a target ref/selector.
+  rpc Action(ComputerActionRequest) returns (ComputerActionResponse);
+  rpc Click(ComputerClickRequest) returns (ComputerClickResponse);
+  rpc Type(ComputerTypeRequest) returns (ComputerTypeResponse);
+  rpc Key(ComputerKeyRequest) returns (ComputerKeyResponse);
+  rpc Scroll(ComputerScrollRequest) returns (ComputerScrollResponse);
+  rpc Drag(ComputerDragRequest) returns (ComputerDragResponse);
+  // Screenshot captures the screen and returns the PNG bytes.
+  rpc Screenshot(ComputerScreenshotRequest) returns (ComputerScreenshotResponse);
+}
+
+message ComputerInfoRequest {}
+message ComputerInfoResponse {
+  // Resolved platform: linux-x11 | linux-wayland | windows | macos | android | ios.
+  string platform = 1;
+  // Display server the platform uses: x11 | wayland | android | ios | "".
+  string display = 2;
+  // Tools the driver relies on, present on PATH (e.g. xa11y, grim, adb, idb).
+  repeated string tools = 3;
+  // Screen size (0x0 when unknown).
+  int32 width = 4;
+  int32 height = 5;
+}
+
+message ComputerAppsRequest {}
+message ComputerAppsResponse {
+  repeated ComputerApp apps = 1;
+}
+message ComputerApp {
+  string pid = 1;
+  string name = 2;
+  bool focused = 3;
+}
+
+message ComputerSnapshotRequest {
+  string app = 1;   // "" = the focused app / whole tree
+  int32 depth = 2;  // 0 = unlimited
+}
+message ComputerSnapshotResponse { string text = 1; }
+
+message ComputerFindRequest {
+  string selector = 1;
+  string app = 2;
+  string output = 3; // pretty | bounds | center
+}
+message ComputerFindResponse { string text = 1; }
+
+message ComputerActionRequest {
+  string action = 1; // press | focus | set-value | type-text | toggle | select | ...
+  string target = 2; // ref or selector
+  string value = 3;
+  string app = 4;
+}
+message ComputerActionResponse { bool ok = 1; }
+
+message ComputerClickRequest {
+  int32 x = 1;
+  int32 y = 2;
+  string button = 3; // left | middle | right
+  int32 count = 4;   // 0/1 = single
+}
+message ComputerClickResponse { bool ok = 1; }
+
+message ComputerTypeRequest {
+  string text = 1;
+  string target = 2; // optional: focus this ref first
+}
+message ComputerTypeResponse { bool ok = 1; }
+
+message ComputerKeyRequest {
+  string key = 1;
+  repeated string held = 2; // modifiers held during the key
+}
+message ComputerKeyResponse { bool ok = 1; }
+
+message ComputerScrollRequest {
+  int32 x = 1;
+  int32 y = 2;
+  int32 dx = 3;
+  int32 dy = 4;
+}
+message ComputerScrollResponse { bool ok = 1; }
+
+message ComputerDragRequest {
+  int32 from_x = 1;
+  int32 from_y = 2;
+  int32 to_x = 3;
+  int32 to_y = 4;
+  int32 duration_ms = 5;
+}
+message ComputerDragResponse { bool ok = 1; }
+
+message ComputerScreenshotRequest {
+  string region = 1; // optional "x,y,w,h"
+}
+message ComputerScreenshotResponse {
+  bytes png = 1;
+  int32 width = 2;
+  int32 height = 3;
+}

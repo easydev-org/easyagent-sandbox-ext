@@ -1,0 +1,601 @@
+id: sandbox
+version: 1.0
+lifecycle: [deleted]
+
+# sandbox-ext: the sandbox + GUI-automation extension for easyagent. It is the
+# Go rebrand of the worker-extension: it drives easyworker sandboxes (the
+# worker.v1 Connect contract) for shell/file/job operations and, where the
+# accessibility CLI is present, native GUI automation.
+tools:
+  - name: list-sandboxes
+    description: >-
+      List every configured sandbox with its OS and whether the accessibility CLI (a11y) is present.
+    descriptions:
+      zh: >-
+        列出所有已配置的沙箱，及其 OS 与是否具备无障碍 CLI（a11y）。
+    input_schema:
+      type: object
+      properties:
+        {}
+      required: []
+    required_config: [sandboxes]
+  - name: sandbox-info
+    description: >-
+      Show the connected easyworker's environment: OS/arch, shell, workspace root, home dir, boot id.
+    descriptions:
+      zh: >-
+        查看所连 easyworker 的环境：OS/架构、shell、工作区根、主目录、boot id。
+    input_schema:
+      type: object
+      properties:
+        {}
+      required: []
+    required_config: [sandboxes]
+  - name: sandbox-exec
+    description: >-
+      Run a short shell command and wait up to `timeout` seconds (default 5, max 60). Returns the job id; on completion the output, on timeout the oldest 200 lines.
+    descriptions:
+      zh: >-
+        运行一条短 shell 命令并最多等待 `timeout` 秒（默认 5，最大 60）。返回任务 id；完成时返回输出，超时返回最早的 200 行。
+    input_schema:
+      type: object
+      properties:
+        command:
+          type: string
+          description: "Shell command to run."
+          descriptions:
+            zh: "要运行的 shell 命令。"
+        workdir:
+          type: string
+          description: "Working dir, relative to the workspace root."
+          descriptions:
+            zh: "工作目录，相对于工作区根。"
+        timeout:
+          type: integer
+          description: "Seconds to wait (default 5, max 60)."
+          descriptions:
+            zh: "等待秒数（默认 5，最大 60）。"
+      required: [command]
+    required_config: [sandboxes]
+  - name: sandbox-job-start
+    description: >-
+      Start a long-running command; returns its job id immediately.
+    descriptions:
+      zh: >-
+        启动一个长时间运行的命令；立即返回其任务 id。
+    input_schema:
+      type: object
+      properties:
+        command:
+          type: string
+          description: "Shell command to run."
+          descriptions:
+            zh: "要运行的 shell 命令。"
+        workdir:
+          type: string
+          description: "Working dir, relative to the workspace root."
+          descriptions:
+            zh: "工作目录，相对于工作区根。"
+      required: [command]
+    required_config: [sandboxes]
+  - name: sandbox-job-output
+    description: >-
+      Read a window of a job's output lines.
+    descriptions:
+      zh: >-
+        读取任务输出行的某个窗口。
+    input_schema:
+      type: object
+      properties:
+        job-id:
+          type: string
+          description: "The job id."
+          descriptions:
+            zh: "任务 id。"
+        offset:
+          type: integer
+          description: "Start line (negative counts from the end)."
+          descriptions:
+            zh: "起始行（负数从末尾计）。"
+        limit:
+          type: integer
+          description: "Max lines (default 200, max 1000)."
+          descriptions:
+            zh: "最大行数（默认 200，最大 1000）。"
+        stream:
+          type: string
+          description: "all | stdout | stderr."
+          descriptions:
+            zh: "all | stdout | stderr。"
+      required: [job-id]
+    required_config: [sandboxes]
+  - name: sandbox-job-wait
+    description: >-
+      Wait up to `timeout` seconds (default 60, max 300) for a job to finish; returns its state + the tail.
+    descriptions:
+      zh: >-
+        最多等待 `timeout` 秒（默认 60，最大 300）等待任务结束；返回状态与尾部输出。
+    input_schema:
+      type: object
+      properties:
+        job-id:
+          type: string
+          description: "The job id."
+          descriptions:
+            zh: "任务 id。"
+        timeout:
+          type: integer
+          description: "Seconds to wait (default 60, max 300)."
+          descriptions:
+            zh: "等待秒数（默认 60，最大 300）。"
+      required: [job-id]
+    required_config: [sandboxes]
+  - name: sandbox-job-kill
+    description: >-
+      Kill a job's whole process tree.
+    descriptions:
+      zh: >-
+        终止任务及其整个进程树。
+    input_schema:
+      type: object
+      properties:
+        job-id:
+          type: string
+          description: "The job id."
+          descriptions:
+            zh: "任务 id。"
+      required: [job-id]
+    required_config: [sandboxes]
+  - name: sandbox-job-list
+    description: >-
+      List recent jobs (id/state/exit/command).
+    descriptions:
+      zh: >-
+        列出最近的任务（id/状态/退出码/命令）。
+    input_schema:
+      type: object
+      properties:
+        limit:
+          type: integer
+          description: "Max jobs (default 50)."
+          descriptions:
+            zh: "最大任务数（默认 50）。"
+      required: []
+    required_config: [sandboxes]
+  - name: sandbox-file-read
+    description: >-
+      Read a text file (line-numbered). Binary files are rejected.
+    descriptions:
+      zh: >-
+        读取文本文件（带行号）。二进制文件会被拒绝。
+    input_schema:
+      type: object
+      properties:
+        path:
+          type: string
+          description: "File path (relative to the workspace)."
+          descriptions:
+            zh: "文件路径（相对于工作区）。"
+        offset:
+          type: integer
+          description: "Start line."
+          descriptions:
+            zh: "起始行。"
+        limit:
+          type: integer
+          description: "Max lines."
+          descriptions:
+            zh: "最大行数。"
+      required: [path]
+    required_config: [sandboxes]
+  - name: sandbox-file-write
+    description: >-
+      Overwrite a file with `content`; returns the numbered whole file.
+    descriptions:
+      zh: >-
+        用 `content` 覆盖文件；返回带行号的完整文件。
+    input_schema:
+      type: object
+      properties:
+        path:
+          type: string
+          description: "File path."
+          descriptions:
+            zh: "文件路径。"
+        content:
+          type: string
+          description: "New file content."
+          descriptions:
+            zh: "新的文件内容。"
+      required: [path, content]
+    required_config: [sandboxes]
+  - name: sandbox-file-list
+    description: >-
+      List a directory tree (breadth-first, up to `depth` levels).
+    descriptions:
+      zh: >-
+        列出目录树（广度优先，最多 `depth` 层）。
+    input_schema:
+      type: object
+      properties:
+        path:
+          type: string
+          description: "Directory path (default the workspace root)."
+          descriptions:
+            zh: "目录路径（默认工作区根）。"
+        depth:
+          type: integer
+          description: "Levels to expand (default 3)."
+          descriptions:
+            zh: "展开层数（默认 3）。"
+        limit:
+          type: integer
+          description: "Max entries (default 200)."
+          descriptions:
+            zh: "最大条目数（默认 200）。"
+      required: []
+    required_config: [sandboxes]
+  - name: sandbox-file-delete
+    description: >-
+      Delete a file or directory tree.
+    descriptions:
+      zh: >-
+        删除文件或目录树。
+    input_schema:
+      type: object
+      properties:
+        path:
+          type: string
+          description: "Path to delete."
+          descriptions:
+            zh: "要删除的路径。"
+      required: [path]
+    required_config: [sandboxes]
+  - name: sandbox-file-move
+    description: >-
+      Move/rename a path.
+    descriptions:
+      zh: >-
+        移动/重命名路径。
+    input_schema:
+      type: object
+      properties:
+        from:
+          type: string
+          description: "Source path."
+          descriptions:
+            zh: "源路径。"
+        to:
+          type: string
+          description: "Destination path."
+          descriptions:
+            zh: "目标路径。"
+      required: [from, to]
+    required_config: [sandboxes]
+  - name: sandbox-file-copy
+    description: >-
+      Copy a path.
+    descriptions:
+      zh: >-
+        复制路径。
+    input_schema:
+      type: object
+      properties:
+        from:
+          type: string
+          description: "Source path."
+          descriptions:
+            zh: "源路径。"
+        to:
+          type: string
+          description: "Destination path."
+          descriptions:
+            zh: "目标路径。"
+      required: [from, to]
+    required_config: [sandboxes]
+  - name: sandbox-download
+    description: >-
+      Download a sandbox file into the agent file store, returning a file:<code>.
+    descriptions:
+      zh: >-
+        将沙箱文件下载到 agent 文件存储，返回 file:<code>。
+    input_schema:
+      type: object
+      properties:
+        path:
+          type: string
+          description: "Sandbox file path."
+          descriptions:
+            zh: "沙箱文件路径。"
+      required: [path]
+    required_config: [sandboxes]
+  - name: sandbox-upload
+    description: >-
+      Upload an agent file:<code> into a sandbox path.
+    descriptions:
+      zh: >-
+        将 agent 的 file:<code> 上传到沙箱路径。
+    input_schema:
+      type: object
+      properties:
+        code:
+          type: string
+          description: "The file:<code>."
+          descriptions:
+            zh: "file:<code>。"
+        path:
+          type: string
+          description: "Destination sandbox path."
+          descriptions:
+            zh: "目标沙箱路径。"
+      required: [code, path]
+    required_config: [sandboxes]
+  - name: computer-info
+    description: >-
+      Report the GUI platform/driver and available tools of a sandbox.
+    descriptions:
+      zh: >-
+        报告沙箱的 GUI 平台/驱动及可用工具。
+    input_schema:
+      type: object
+      properties:
+        {}
+      required: []
+    required_config: [sandboxes]
+  - name: computer-apps
+    description: >-
+      List the running GUI applications (focused marked).
+    descriptions:
+      zh: >-
+        列出正在运行的 GUI 应用（标记聚焦项）。
+    input_schema:
+      type: object
+      properties:
+        {}
+      required: []
+    required_config: [sandboxes]
+  - name: computer-snapshot
+    description: >-
+      Dump the accessibility tree (already formatted for a model).
+    descriptions:
+      zh: >-
+        导出无障碍树（已为模型格式化）。
+    input_schema:
+      type: object
+      properties:
+        app:
+          type: string
+          description: "App name (default the focused app)."
+          descriptions:
+            zh: "应用名（默认聚焦应用）。"
+        depth:
+          type: integer
+          description: "0 = unlimited."
+          descriptions:
+            zh: "0 表示不限。"
+      required: []
+    required_config: [sandboxes]
+  - name: computer-find
+    description: >-
+      Match elements by an accessibility selector.
+    descriptions:
+      zh: >-
+        按无障碍选择器匹配元素。
+    input_schema:
+      type: object
+      properties:
+        selector:
+          type: string
+          description: "CSS-like a11y selector."
+          descriptions:
+            zh: "类 CSS 的 a11y 选择器。"
+        app:
+          type: string
+          description: "App name."
+          descriptions:
+            zh: "应用名。"
+        output:
+          type: string
+          description: "pretty | bounds | center."
+          descriptions:
+            zh: "pretty | bounds | center。"
+      required: [selector]
+    required_config: [sandboxes]
+  - name: computer-action
+    description: >-
+      Perform an accessibility action on a target ref/selector.
+    descriptions:
+      zh: >-
+        对目标 ref/选择器执行无障碍操作。
+    input_schema:
+      type: object
+      properties:
+        action:
+          type: string
+          description: "press | focus | set-value | type-text | toggle | select | ..."
+          descriptions:
+            zh: "press | focus | set-value | type-text | toggle | select | ..."
+        target:
+          type: string
+          description: "Element ref or selector."
+          descriptions:
+            zh: "元素 ref 或选择器。"
+        value:
+          type: string
+          description: "Action value (set-value/type-text)."
+          descriptions:
+            zh: "操作值（set-value/type-text）。"
+      required: [action, target]
+    required_config: [sandboxes]
+  - name: computer-click
+    description: >-
+      Click at screen coordinates.
+    descriptions:
+      zh: >-
+        在屏幕坐标处点击。
+    input_schema:
+      type: object
+      properties:
+        x:
+          type: integer
+          description: "X."
+          descriptions:
+            zh: "X。"
+        y:
+          type: integer
+          description: "Y."
+          descriptions:
+            zh: "Y。"
+        button:
+          type: string
+          description: "left | middle | right."
+          descriptions:
+            zh: "left | middle | right。"
+        count:
+          type: integer
+          description: "Clicks (default 1)."
+          descriptions:
+            zh: "点击次数（默认 1）。"
+      required: [x, y]
+    required_config: [sandboxes]
+  - name: computer-type
+    description: >-
+      Type text (optionally focusing a target first).
+    descriptions:
+      zh: >-
+        输入文本（可先聚焦目标）。
+    input_schema:
+      type: object
+      properties:
+        text:
+          type: string
+          description: "Text to type."
+          descriptions:
+            zh: "要输入的文本。"
+        target:
+          type: string
+          description: "Optional ref to focus first."
+          descriptions:
+            zh: "可选：先聚焦的 ref。"
+      required: [text]
+    required_config: [sandboxes]
+  - name: computer-key
+    description: >-
+      Press a key (with optional modifiers held).
+    descriptions:
+      zh: >-
+        按键（可选按住修饰键）。
+    input_schema:
+      type: object
+      properties:
+        key:
+          type: string
+          description: "Key name."
+          descriptions:
+            zh: "键名。"
+        held:
+          type: array
+          description: "Modifiers held during the key."
+          descriptions:
+            zh: "按键期间按住的修饰键。"
+      required: [key]
+    required_config: [sandboxes]
+  - name: computer-scroll
+    description: >-
+      Scroll at a position.
+    descriptions:
+      zh: >-
+        在某位置滚动。
+    input_schema:
+      type: object
+      properties:
+        x:
+          type: integer
+          description: "X."
+          descriptions:
+            zh: "X。"
+        y:
+          type: integer
+          description: "Y."
+          descriptions:
+            zh: "Y。"
+        dx:
+          type: integer
+          description: "Horizontal delta."
+          descriptions:
+            zh: "水平增量。"
+        dy:
+          type: integer
+          description: "Vertical delta."
+          descriptions:
+            zh: "垂直增量。"
+      required: []
+    required_config: [sandboxes]
+  - name: computer-drag
+    description: >-
+      Drag from one position to another.
+    descriptions:
+      zh: >-
+        从一个位置拖拽到另一个。
+    input_schema:
+      type: object
+      properties:
+        from_x:
+          type: integer
+          description: "Start X."
+          descriptions:
+            zh: "起点 X。"
+        from_y:
+          type: integer
+          description: "Start Y."
+          descriptions:
+            zh: "起点 Y。"
+        to_x:
+          type: integer
+          description: "End X."
+          descriptions:
+            zh: "终点 X。"
+        to_y:
+          type: integer
+          description: "End Y."
+          descriptions:
+            zh: "终点 Y。"
+        duration_ms:
+          type: integer
+          description: "Duration ms."
+          descriptions:
+            zh: "持续毫秒。"
+      required: [from_x, from_y, to_x, to_y]
+    required_config: [sandboxes]
+  - name: computer-screenshot
+    description: >-
+      Capture the screen and return a PNG.
+    descriptions:
+      zh: >-
+        截取屏幕并返回 PNG。
+    input_schema:
+      type: object
+      properties:
+        region:
+          type: string
+          description: "Optional \"x,y,w,h\"."
+          descriptions:
+            zh: "可选 \"x,y,w,h\"。"
+      required: []
+    required_config: [sandboxes]
+
+config:
+  - name: sandboxes
+    type: string
+    kind: secret
+    scope: global
+    description: >-
+      JSON list of easyworker sandboxes this extension may run against, each
+      {"name":"...","url":"http://worker:80","token":"..."}. A tool's `sandbox`
+      argument selects one by name; the first is the default when omitted. This
+      value is a SECRET: it is never returned to a client.
+    descriptions:
+      zh: >-
+        本扩展可运行的 easyworker 沙箱列表（JSON），每项
+        {"name":"...","url":"http://worker:80","token":"..."}。工具的 `sandbox` 参数按名选择；
+        省略时默认第一个。该值为机密：永不返回给客户端。
