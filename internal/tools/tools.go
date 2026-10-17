@@ -12,6 +12,7 @@ import (
 	"github.com/easydev-org/easyagent-sandbox-ext/internal/i18n"
 	"github.com/easydev-org/easyagent-sandbox-ext/internal/sandbox"
 	easybus "github.com/easydev-org/easybus-sdk"
+	"github.com/easydev-org/easybus-sdk/bus"
 	"github.com/easydev-org/easybus-sdk/extension"
 )
 
@@ -23,6 +24,9 @@ type Deps struct {
 	Locale func(session, tenant string) string
 	// Cache is the worker-client cache.
 	Cache *sandbox.ClientCache
+	// Bus is the extension's bus connection, used for the agent file RPCs
+	// (download/upload persist bytes through the agent — no local store).
+	Bus bus.Bus
 }
 
 // Handler is one tool implementation.

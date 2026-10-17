@@ -42,6 +42,7 @@ func main() {
 	cache := sandbox.NewClientCache(16)
 	handlers := tools.Registry(tools.Deps{
 		Cache: cache,
+		Bus:   bus,
 		GetConfig: func(name, session, tenant string) any {
 			if ext == nil {
 				return nil

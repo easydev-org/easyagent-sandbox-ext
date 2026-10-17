@@ -152,14 +152,3 @@ func (t *toolset) fileCopy(ctx context.Context, args map[string]any, session, te
 	}
 	return extension.ToolResultData{Content: fmt.Sprintf("copied %s -> %s", from, to)}, nil
 }
-
-// download pulls a sandbox file into the agent's file store and returns its
-// file:<code> (the extension needs the agent file RPCs).
-func (t *toolset) download(ctx context.Context, args map[string]any, session, tenant string) (extension.ToolResultData, error) {
-	return extension.ToolResultData{}, &extension.TypedError{Code: easybus.ToolResultErrorCodeInternal, Message: "sandbox-download requires the agent file RPCs (not wired yet)"}
-}
-
-// upload pushes an agent file:<code> into a sandbox path.
-func (t *toolset) upload(ctx context.Context, args map[string]any, session, tenant string) (extension.ToolResultData, error) {
-	return extension.ToolResultData{}, &extension.TypedError{Code: easybus.ToolResultErrorCodeInternal, Message: "sandbox-upload requires the agent file RPCs (not wired yet)"}
-}
