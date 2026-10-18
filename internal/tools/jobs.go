@@ -90,10 +90,8 @@ func (t *toolset) exec(ctx context.Context, args map[string]any, session, tenant
 	if command == "" {
 		return extension.ToolResultData{}, &extension.TypedError{Code: easybus.ToolResultErrorCodeInvalidArgument, Message: "command is required"}
 	}
-	timeoutS := argInt(args, "timeout", 5)
-	if timeoutS <= 0 || timeoutS > 60 {
-		timeoutS = 5
-	}
+	// Clamp, do not reset: asking for >60s must give 60s, not the 5s default.
+	timeoutS := clampInt(args, "timeout", 5, 60)
 	cl := t.deps.Cache.Worker(ep(s))
 	started, err := cl.Execute(ctx, &workerv1.ExecuteRequest{
 		Command: command, Workdir: argStr(args, "workdir"), Env: argEnv(args),
@@ -146,10 +144,7 @@ func (t *toolset) jobOutput(ctx context.Context, args map[string]any, session, t
 		return extension.ToolResultData{}, &extension.TypedError{Code: easybus.ToolResultErrorCodeInvalidArgument, Message: "job-id is required"}
 	}
 	start := argInt(args, "offset", 0)
-	limit := argInt(args, "limit", 200)
-	if limit <= 0 || limit > maxOutputLines {
-		limit = 200
-	}
+	limit := clampInt(args, "limit", 200, maxOutputLines)
 	stream := argStr(args, "stream")
 	if stream == "" {
 		stream = "all"
@@ -173,10 +168,8 @@ func (t *toolset) jobWait(ctx context.Context, args map[string]any, session, ten
 	if jobID == "" {
 		return extension.ToolResultData{}, &extension.TypedError{Code: easybus.ToolResultErrorCodeInvalidArgument, Message: "job-id is required"}
 	}
-	timeoutS := argInt(args, "timeout", 60)
-	if timeoutS <= 0 || timeoutS > 300 {
-		timeoutS = 60
-	}
+	// Default 60s, capped at 90s (clamped, not reset).
+	timeoutS := clampInt(args, "timeout", 60, 90)
 	cl := t.deps.Cache.Worker(ep(s))
 	state, code := waitForJob(ctx, cl, jobID, time.Duration(timeoutS)*time.Second)
 	text, _ := renderOutput(ctx, cl, jobID, -200, 0, "all")

@@ -111,10 +111,10 @@ tools:
     required_config: [sandboxes]
   - name: sandbox-job-wait
     description: >-
-      Wait up to `timeout` seconds (default 60, max 300) for a job to finish; returns its state + the tail.
+      Wait up to `timeout` seconds (default 60, max 90) for a job to finish; returns its state + the tail.
     descriptions:
       zh: >-
-        最多等待 `timeout` 秒（默认 60，最大 300）等待任务结束；返回状态与尾部输出。
+        最多等待 `timeout` 秒（默认 60，最大 90）等待任务结束；返回状态与尾部输出。
     input_schema:
       type: object
       properties:
@@ -125,9 +125,9 @@ tools:
             zh: "任务 id。"
         timeout:
           type: integer
-          description: "Seconds to wait (default 60, max 300)."
+          description: "Seconds to wait (default 60, max 90)."
           descriptions:
-            zh: "等待秒数（默认 60，最大 300）。"
+            zh: "等待秒数（默认 60，最大 90）。"
       required: [job-id]
     required_config: [sandboxes]
   - name: sandbox-job-kill

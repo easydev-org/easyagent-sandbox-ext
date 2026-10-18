@@ -19,6 +19,20 @@ func argInt(args map[string]any, key string, def int) int {
 	return def
 }
 
+// clampInt reads an int argument and clamps it into [1, max]. A value <= 0
+// (absent or non-positive) uses def; a value above max is CLAMPED to max (not
+// reset to def — asking for more than the cap must not give you less).
+func clampInt(args map[string]any, key string, def, max int) int {
+	v := argInt(args, key, 0)
+	if v <= 0 {
+		v = def
+	}
+	if v > max {
+		v = max
+	}
+	return v
+}
+
 func argBool(args map[string]any, key string, def bool) bool {
 	if v, ok := args[key].(bool); ok {
 		return v
