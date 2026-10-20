@@ -228,12 +228,15 @@ tools:
   - name: sandbox-job-flow
     description: >-
       Read ONE intermediate stream of a job, by fid (get the fid from
-      sandbox-job-graph). Paged by byte offset/limit; text is shown with line
-      numbers, binary is reported by size instead of dumped.
+      sandbox-job-graph). Paged by LINE (offset/limit) and optionally filtered by
+      a regexp (grep) — the filter is applied BEFORE the window, so offset/limit
+      page through what matched. Lines are numbered absolutely; binary content is
+      reported by size instead of dumped.
     descriptions:
       zh: >-
-        按 fid 读取任务的某一个中间流（fid 来自 sandbox-job-graph）。按字节 offset/limit 分页；
-        文本带行号显示，二进制只报大小而不倾倒内容。
+        按 fid 读取任务的某一个中间流（fid 来自 sandbox-job-graph）。按「行」分页（offset/limit），
+        并可用正则（grep）过滤——过滤先于窗口，故 offset/limit 是在匹配结果上翻页。
+        行号是绝对行号；二进制只报大小而不倾倒内容。
     input_schema:
       type: object
       properties:
@@ -247,16 +250,26 @@ tools:
           description: "The stream id, from sandbox-job-graph."
           descriptions:
             zh: "流 id，来自 sandbox-job-graph。"
+        grep:
+          type: string
+          description: >-
+            Regexp; only matching lines are kept, THEN offset/limit page through
+            them. Invalid regexps are rejected rather than silently matching
+            nothing.
+          descriptions:
+            zh: >-
+              正则表达式；只保留匹配的行，然后在其上按 offset/limit 分页。
+              非法正则会报错，而不是静默地匹配不到任何内容。
         offset:
           type: integer
-          description: "Skip this many bytes (0 = start)."
+          description: "Skip this many LINES (0 = start; applies after grep)."
           descriptions:
-            zh: "跳过多少字节（0 表示从头）。"
+            zh: "跳过多少「行」（0 表示从头；在 grep 之后生效）。"
         limit:
           type: integer
-          description: "Max bytes to return (0 = all, capped at 64 KiB)."
+          description: "Max LINES to return (default 200, max 1000)."
           descriptions:
-            zh: "最多返回多少字节（0 表示全部，上限 64 KiB）。"
+            zh: "最多返回多少「行」（默认 200，上限 1000）。"
       required: [job-id, fid]
     required_config: [sandboxes]
     namespace: jobs

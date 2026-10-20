@@ -26,6 +26,8 @@ const (
 	MsgJobFlowHead            = "jobFlowHead"
 	MsgJobFlowEmpty           = "jobFlowEmpty"
 	MsgJobFlowMore            = "jobFlowMore"
+	MsgJobFlowFiltered        = "jobFlowFiltered"
+	MsgJobFlowNextPage        = "jobFlowNextPage"
 	MsgJobStdinOK             = "jobStdinOK"
 	MsgIntermediatesHead      = "intermediatesHead"
 	MsgIntermediatesCut       = "intermediatesCut"
@@ -94,6 +96,14 @@ var Catalog = easybusi18n.Catalog{
 	MsgJobFlowMore: {
 		"en": "... truncated: {next} of {total} bytes shown; continue with offset={next}",
 		"zh": "……已截断：显示 {total} 字节中的 {next} 字节；用 offset={next} 继续",
+	},
+	MsgJobFlowFiltered: {
+		"en": "filtered by /{pattern}/: {n} of {total} line(s) match",
+		"zh": "按 /{pattern}/ 过滤：{total} 行中有 {n} 行匹配",
+	},
+	MsgJobFlowNextPage: {
+		"en": "more lines available: re-run with offset={next} (limit up to {max})",
+		"zh": "还有更多行：用 offset={next} 继续（limit 上限 {max}）",
 	},
 	MsgJobStdinOK: {
 		"en": "wrote {n} byte(s) to job {id} stdin (closed={closed})",

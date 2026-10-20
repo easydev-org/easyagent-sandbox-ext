@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"unicode/utf8"
@@ -20,6 +21,25 @@ import (
 // binary artefact. Anything larger is reported by size, and the caller can still
 // page it with offset/limit.
 const maxInlineFlowBytes = 64 << 10
+
+// Page bounds for a flow read. Lines, not bytes: see jobFlow's comment.
+const (
+	defaultFlowLines = 200
+	maxFlowLines     = 1000
+)
+
+// splitFlowLines splits a stream into lines without inventing a trailing empty
+// one for content that ends in a newline (which every well-formed line stream
+// does).
+func splitFlowLines(s string) []string {
+	if s == "" {
+		return nil
+	}
+	// Trim only the ONE terminator a line stream ends with. A lone "\n" is one
+	// EMPTY line, not zero lines — TrimSuffix leaves "", and splitting "" yields
+	// a single empty element, which is exactly right.
+	return strings.Split(strings.TrimSuffix(s, "\n"), "\n")
+}
 
 // jobGraph renders a job's dataflow: every stream with its producer, consumer
 // and size, plus the edges between them.
@@ -158,7 +178,6 @@ func (t *toolset) jobFlow(ctx context.Context, args map[string]any, session, ten
 		}
 	}
 	// fid has no sensible default: 0 is a real FID, so "absent" must be distinct.
-	// Guard on presence in the map, then read with the shared helper.
 	if _, present := args["fid"]; !present {
 		return extension.ToolResultData{}, &extension.TypedError{
 			Code:    easybus.ToolResultErrorCodeInvalidArgument,
@@ -177,59 +196,105 @@ func (t *toolset) jobFlow(ctx context.Context, args map[string]any, session, ten
 	raw := res.GetData()
 	locale := t.locale(session, tenant)
 
+	// A flow is read by LINE, not by byte.
+	//
+	// A byte window looks simpler but cuts mid-line: offset=100, limit=50 returns
+	// half a log line, which is unreadable and impossible to refer to. A line
+	// window mirrors sandbox-job-output and sandbox-file-read, so offset=200 means
+	// "skip 200 lines".
+	allLines := splitFlowLines(string(raw))
+	lines := allLines
+
+	// grep narrows BEFORE the window, so offset/limit apply to what MATCHED. That
+	// is the useful order: "the errors, first 20 of them" rather than "the first
+	// 20 lines, if any of them are errors".
+	var pattern string
+	if p := argStr(args, "grep"); p != "" {
+		re, cerr := regexp.Compile(p)
+		if cerr != nil {
+			return extension.ToolResultData{}, &extension.TypedError{
+				Code:    easybus.ToolResultErrorCodeInvalidArgument,
+				Message: fmt.Sprintf("grep %q is not a valid regexp: %v", p, cerr),
+			}
+		}
+		pattern = p
+		matched := make([]string, 0, len(lines))
+		for _, l := range lines {
+			if re.MatchString(l) {
+				matched = append(matched, l)
+			}
+		}
+		lines = matched
+	}
+
 	off := argInt(args, "offset", 0)
-	limit := argInt(args, "limit", 0)
 	if off < 0 {
 		off = 0
 	}
-	total := len(raw)
-	if off > total {
-		off = total
+	limit := argInt(args, "limit", 0)
+	if limit <= 0 {
+		limit = defaultFlowLines
 	}
-	end := total
-	if limit > 0 && off+limit < end {
-		end = off + limit
+	if limit > maxFlowLines {
+		limit = maxFlowLines
 	}
-	// Keep the transport bounded even when the caller asks for everything.
-	clampedTo := end
-	if clampedTo-off > maxInlineFlowBytes {
-		clampedTo = off + maxInlineFlowBytes
+	if off > len(lines) {
+		off = len(lines)
 	}
-	chunk := raw[off:clampedTo]
+	end := off + limit
+	if end > len(lines) {
+		end = len(lines)
+	}
+	page := lines[off:end]
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s\n", i18n.T(locale, i18n.MsgJobFlowHead, i18n.Params{
-		"fid": fmt.Sprintf("%d", fid), "total": fmt.Sprintf("%d", total),
+		"fid": fmt.Sprintf("%d", fid), "total": fmt.Sprintf("%d", len(raw)),
 	}))
-	if total == 0 {
+	if len(allLines) == 0 {
 		b.WriteString(i18n.T(locale, i18n.MsgJobFlowEmpty, nil))
-		return extension.ToolResultData{Content: b.String(), Data: map[string]any{
-			"jobId": jobID, "fid": fid, "bytes": 0,
+		return extension.ToolResultData{Content: strings.TrimRight(b.String(), "\n"), Data: map[string]any{
+			"jobId": jobID, "fid": fid, "bytes": len(raw), "lines": 0,
 		}}, nil
 	}
-	b.WriteString(renderBytes(chunk))
+	if pattern != "" {
+		fmt.Fprintf(&b, "%s\n", i18n.T(locale, i18n.MsgJobFlowFiltered, i18n.Params{
+			"n":       fmt.Sprintf("%d", len(lines)),
+			"total":   fmt.Sprintf("%d", len(allLines)),
+			"pattern": pattern,
+		}))
+		if len(lines) == 0 {
+			return extension.ToolResultData{Content: strings.TrimRight(b.String(), "\n"), Data: map[string]any{
+				"jobId": jobID, "fid": fid, "bytes": len(raw),
+				"lines": len(allLines), "matched": 0, "grep": pattern,
+			}}, nil
+		}
+	}
 
-	truncated := clampedTo < total
-	if truncated {
-		fmt.Fprintf(&b, "\n\n%s\n", i18n.T(locale, i18n.MsgJobFlowMore, i18n.Params{
-			"next":  fmt.Sprintf("%d", clampedTo),
-			"total": fmt.Sprintf("%d", total),
+	// Number by ABSOLUTE position so two pages never both label their first line
+	// "1" — the number has to be referable.
+	width := len(fmt.Sprintf("%d", off+len(page)))
+	for i, l := range page {
+		fmt.Fprintf(&b, "%*d| %s\n", width, off+i+1, l)
+	}
+	fmt.Fprintf(&b, "--- lines %d-%d of %d ---\n", off+1, off+len(page), len(lines))
+	if end < len(lines) {
+		fmt.Fprintf(&b, "%s\n", i18n.T(locale, i18n.MsgJobFlowNextPage, i18n.Params{
+			"next": fmt.Sprintf("%d", end), "max": fmt.Sprintf("%d", maxFlowLines),
 		}))
 	}
 	return extension.ToolResultData{
 		Content: strings.TrimRight(b.String(), "\n"),
 		Data: map[string]any{
 			"jobId": jobID, "fid": fid,
-			"bytes": total, "offset": off, "returned": len(chunk), "truncated": truncated,
-			"text": string(chunk),
+			"bytes": len(raw),
+			"lines": len(allLines), "matched": len(lines),
+			"offset": off, "returned": len(page),
+			"grep": pattern,
+			"text": strings.Join(page, "\n"),
 		},
 	}, nil
 }
-
-// jobStdin writes to a running job's stdin, optionally closing it.
-//
-// The worker has had JobStdin all along; without a tool, an interactive command
-// (`read x`, a REPL, a prompt) could only ever be started and then timed out.
 func (t *toolset) jobStdin(ctx context.Context, args map[string]any, session, tenant string) (extension.ToolResultData, error) {
 	s, err := t.resolve(args, session, tenant)
 	if err != nil {

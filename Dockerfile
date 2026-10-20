@@ -1,20 +1,19 @@
 # syntax=docker/dockerfile:1
-ARG REGISTRY=docker.io/library
-FROM ${REGISTRY}/golang:1.26-alpine AS build
-ARG HTTP_PROXY
-ARG HTTPS_PROXY
-ENV HTTP_PROXY=${HTTP_PROXY} HTTPS_PROXY=${HTTPS_PROXY} \
-    NO_PROXY=localhost,127.0.0.1,.svc.cluster.local,.svc \
-    GOPROXY=https://goproxy.cn,direct CGO_ENABLED=0
+#
+# PORTABILITY: nothing environment-specific lives here — no internal artifact
+# mirror, no proxy, no regional package mirror, no *.svc.cluster.local. A CI
+# runner and a developer laptop build the same image.
+FROM golang:1.26-alpine AS build
 WORKDIR /build
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY . .
-RUN go build -trimpath -ldflags "-s -w" -o /out/sandbox-ext ./cmd/sandbox-ext
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/sandbox-ext ./cmd/sandbox-ext
 
-FROM ${REGISTRY}/alpine:3.24
-RUN sed -i 's|dl-cdn.alpinelinux.org|mirrors.aliyun.com|g' /etc/apk/repositories \
-    && apk add --no-cache ca-certificates
+FROM alpine:3.24
+RUN apk add --no-cache ca-certificates
 WORKDIR /app
 COPY --from=build /out/sandbox-ext /app/sandbox-ext
 EXPOSE 8080

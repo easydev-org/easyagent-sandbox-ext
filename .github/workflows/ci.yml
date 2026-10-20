@@ -1,0 +1,58 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go build ./...
+      - run: go vet ./...
+      - run: go test -race ./...
+      - name: lint yaml (duplicate keys)
+        run: |
+          python3 -m pip install --quiet pyyaml
+          python3 - <<'PY'
+          import sys, yaml
+          class Strict(yaml.SafeLoader): pass
+          def no_dup(loader, node, deep=False):
+              seen = set()
+              for k, _ in node.value:
+                  key = loader.construct_object(k, deep=deep)
+                  if key in seen:
+                      raise ValueError(f"duplicate key {key!r} at line {k.start_mark.line+1}")
+                  seen.add(key)
+              return yaml.SafeLoader.construct_mapping(loader, node, deep)
+          Strict.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, no_dup)
+          bad = 0
+          for f in ("manifest.yaml",):
+              try:
+                  yaml.load(open(f), Loader=Strict); print("OK  ", f)
+              except Exception as e:
+                  print("FAIL", f, e); bad = 1
+          sys.exit(bad)
+          PY
+
+  # The sandbox tools drive a real easyworker. Starting one here would mean
+  # publishing its image first, so the E2E runs only when a worker is made
+  # available to CI — the unit suite covers the request/response shaping.
+  e2e:
+    runs-on: ubuntu-latest
+    needs: unit
+    if: ${{ vars.SANDBOX_E2E_ENABLED == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go test ./... -run 'E2E|Integration' -v -timeout 600s
