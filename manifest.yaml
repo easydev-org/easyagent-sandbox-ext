@@ -162,6 +162,102 @@ tools:
             zh: "最大任务数（默认 50）。"
       required: []
     required_config: [sandboxes]
+  - name: sandbox-job-graph
+    description: >-
+      Show a job's DATAFLOW: every stream it created, with the command that
+      produced it, the command that consumed it, and its size — plus the edges
+      between streams. This is how you answer "why did the pipeline print that?"
+      without re-running it: the job's final stdout hides every intermediate step.
+    descriptions:
+      zh: >-
+        查看任务的「数据流」：它创建的每个流，含产出命令、消费命令、大小，以及流之间的边。
+        无需重跑就能回答「为什么管道输出是这个值」——任务的最终 stdout 掩盖了每个中间步骤。
+    input_schema:
+      type: object
+      properties:
+        job-id:
+          type: string
+          description: "The job id."
+          descriptions:
+            zh: "任务 id。"
+        all:
+          type: boolean
+          description: >-
+            List every stream, including the per-stage fd endpoints (stdin/
+            stdout/stderr identity, no bytes). They are folded by default because
+            each stage contributes three and they drown the real data flows.
+          descriptions:
+            zh: >-
+              列出全部流，含每个阶段的 fd 端点（stdin/stdout/stderr 的标识，不含字节）。
+              默认折叠，因为每个阶段都有 3 个，会把真正的数据流淹没。
+      required: [job-id]
+    required_config: [sandboxes]
+    namespace: jobs
+  - name: sandbox-job-flow
+    description: >-
+      Read ONE intermediate stream of a job, by fid (get the fid from
+      sandbox-job-graph). Paged by byte offset/limit; text is shown with line
+      numbers, binary is reported by size instead of dumped.
+    descriptions:
+      zh: >-
+        按 fid 读取任务的某一个中间流（fid 来自 sandbox-job-graph）。按字节 offset/limit 分页；
+        文本带行号显示，二进制只报大小而不倾倒内容。
+    input_schema:
+      type: object
+      properties:
+        job-id:
+          type: string
+          description: "The job id."
+          descriptions:
+            zh: "任务 id。"
+        fid:
+          type: integer
+          description: "The stream id, from sandbox-job-graph."
+          descriptions:
+            zh: "流 id，来自 sandbox-job-graph。"
+        offset:
+          type: integer
+          description: "Skip this many bytes (0 = start)."
+          descriptions:
+            zh: "跳过多少字节（0 表示从头）。"
+        limit:
+          type: integer
+          description: "Max bytes to return (0 = all, capped at 64 KiB)."
+          descriptions:
+            zh: "最多返回多少字节（0 表示全部，上限 64 KiB）。"
+      required: [job-id, fid]
+    required_config: [sandboxes]
+    namespace: jobs
+  - name: sandbox-job-stdin
+    description: >-
+      Write to a running job's stdin, optionally closing it. Needed for any
+      interactive command (`read`, a REPL, a prompt) — otherwise it can only be
+      started and then time out.
+    descriptions:
+      zh: >-
+        向运行中任务的标准输入写入，可选择关闭。交互式命令（`read`、REPL、提示符）必需——
+        否则只能启动然后超时。
+    input_schema:
+      type: object
+      properties:
+        job-id:
+          type: string
+          description: "The job id."
+          descriptions:
+            zh: "任务 id。"
+        data:
+          type: string
+          description: "Text to write."
+          descriptions:
+            zh: "要写入的文本。"
+        close:
+          type: boolean
+          description: "Close stdin after writing (signals EOF)."
+          descriptions:
+            zh: "写完后关闭标准输入（表示 EOF）。"
+      required: [job-id]
+    required_config: [sandboxes]
+    namespace: jobs
   - name: sandbox-file-read
     description: >-
       Read a text file (line-numbered). Binary files are rejected.

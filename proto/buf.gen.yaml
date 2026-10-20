@@ -2,7 +2,15 @@ version: v2
 plugins:
   - local: protoc-gen-go
     out: ../gen
-    opt: paths=source_relative
+    # The .proto carries `go_package = ".../easyworker/gen/..."` because it is
+    # copied verbatim from the worker (the single source of truth). This module is
+    # a different one, so the package path must be rewritten — otherwise the
+    # generated code imports a module this repo does not depend on.
+    opt:
+      - paths=source_relative
+      - Mworker/v1/worker.proto=github.com/easydev-org/easyagent-sandbox-ext/gen/worker/v1;workerv1
   - local: protoc-gen-connect-go
     out: ../gen
-    opt: paths=source_relative
+    opt:
+      - paths=source_relative
+      - Mworker/v1/worker.proto=github.com/easydev-org/easyagent-sandbox-ext/gen/worker/v1;workerv1

@@ -68,6 +68,10 @@ const (
 	WorkerServiceJobStdinProcedure = "/worker.v1.WorkerService/JobStdin"
 	// WorkerServiceJobKillProcedure is the procedure name of the WorkerService's JobKill RPC.
 	WorkerServiceJobKillProcedure = "/worker.v1.WorkerService/JobKill"
+	// WorkerServiceJobGraphProcedure is the procedure name of the WorkerService's JobGraph RPC.
+	WorkerServiceJobGraphProcedure = "/worker.v1.WorkerService/JobGraph"
+	// WorkerServiceJobFlowProcedure is the procedure name of the WorkerService's JobFlow RPC.
+	WorkerServiceJobFlowProcedure = "/worker.v1.WorkerService/JobFlow"
 	// WorkerServiceFileReadProcedure is the procedure name of the WorkerService's FileRead RPC.
 	WorkerServiceFileReadProcedure = "/worker.v1.WorkerService/FileRead"
 	// WorkerServiceFileWriteProcedure is the procedure name of the WorkerService's FileWrite RPC.
@@ -147,6 +151,20 @@ var (
 			Procedure:  WorkerServiceJobKillProcedure,
 		}
 	})
+	workerServiceJobGraphSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_worker_v1_worker_proto.Services().ByName("WorkerService").Methods().ByName("JobGraph"),
+			Procedure:  WorkerServiceJobGraphProcedure,
+		}
+	})
+	workerServiceJobFlowSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_worker_v1_worker_proto.Services().ByName("WorkerService").Methods().ByName("JobFlow"),
+			Procedure:  WorkerServiceJobFlowProcedure,
+		}
+	})
 	workerServiceFileReadSpec = sync.OnceValue(func() connect.Spec {
 		return connect.Spec{
 			StreamType: connect.StreamTypeUnary,
@@ -208,6 +226,10 @@ type WorkerServiceClient interface {
 	JobWait(context.Context, *v1.JobWaitRequest) (*v1.JobWaitResponse, error)
 	JobStdin(context.Context, *v1.JobStdinRequest) (*v1.JobStdinResponse, error)
 	JobKill(context.Context, *v1.JobKillRequest) (*v1.JobKillResponse, error)
+	// JobGraph is the job's easysh dataflow: every flow (pipe/redirect/fd/...)
+	// and the edges between them. JobFlow returns one flow's intermediate bytes.
+	JobGraph(context.Context, *v1.JobGraphRequest) (*v1.JobGraphResponse, error)
+	JobFlow(context.Context, *v1.JobFlowRequest) (*v1.JobFlowResponse, error)
 	FileRead(context.Context, *v1.FileReadRequest) (*v1.FileReadResponse, error)
 	FileWrite(context.Context, *v1.FileWriteRequest) (*v1.FileWriteResponse, error)
 	FileDelete(context.Context, *v1.FileDeleteRequest) (*v1.FileDeleteResponse, error)
@@ -253,6 +275,10 @@ type WorkerServiceHandler interface {
 	JobWait(context.Context, *v1.JobWaitRequest) (*v1.JobWaitResponse, error)
 	JobStdin(context.Context, *v1.JobStdinRequest) (*v1.JobStdinResponse, error)
 	JobKill(context.Context, *v1.JobKillRequest) (*v1.JobKillResponse, error)
+	// JobGraph is the job's easysh dataflow: every flow (pipe/redirect/fd/...)
+	// and the edges between them. JobFlow returns one flow's intermediate bytes.
+	JobGraph(context.Context, *v1.JobGraphRequest) (*v1.JobGraphResponse, error)
+	JobFlow(context.Context, *v1.JobFlowRequest) (*v1.JobFlowResponse, error)
 	FileRead(context.Context, *v1.FileReadRequest) (*v1.FileReadResponse, error)
 	FileWrite(context.Context, *v1.FileWriteRequest) (*v1.FileWriteResponse, error)
 	FileDelete(context.Context, *v1.FileDeleteRequest) (*v1.FileDeleteResponse, error)
@@ -275,6 +301,8 @@ func RegisterWorkerServiceHandler(server *connect.Server, svc WorkerServiceHandl
 		connect.Method{Spec: workerServiceJobWaitSpec(), Handler: adapter.jobWait},
 		connect.Method{Spec: workerServiceJobStdinSpec(), Handler: adapter.jobStdin},
 		connect.Method{Spec: workerServiceJobKillSpec(), Handler: adapter.jobKill},
+		connect.Method{Spec: workerServiceJobGraphSpec(), Handler: adapter.jobGraph},
+		connect.Method{Spec: workerServiceJobFlowSpec(), Handler: adapter.jobFlow},
 		connect.Method{Spec: workerServiceFileReadSpec(), Handler: adapter.fileRead},
 		connect.Method{Spec: workerServiceFileWriteSpec(), Handler: adapter.fileWrite},
 		connect.Method{Spec: workerServiceFileDeleteSpec(), Handler: adapter.fileDelete},
@@ -333,6 +361,14 @@ func (UnimplementedWorkerServiceHandler) JobStdin(context.Context, *v1.JobStdinR
 
 func (UnimplementedWorkerServiceHandler) JobKill(context.Context, *v1.JobKillRequest) (*v1.JobKillResponse, error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, "worker.v1.WorkerService.JobKill is not implemented")
+}
+
+func (UnimplementedWorkerServiceHandler) JobGraph(context.Context, *v1.JobGraphRequest) (*v1.JobGraphResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "worker.v1.WorkerService.JobGraph is not implemented")
+}
+
+func (UnimplementedWorkerServiceHandler) JobFlow(context.Context, *v1.JobFlowRequest) (*v1.JobFlowResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "worker.v1.WorkerService.JobFlow is not implemented")
 }
 
 func (UnimplementedWorkerServiceHandler) FileRead(context.Context, *v1.FileReadRequest) (*v1.FileReadResponse, error) {
@@ -426,6 +462,22 @@ func (c *workerServiceClient) JobStdin(ctx context.Context, req *v1.JobStdinRequ
 func (c *workerServiceClient) JobKill(ctx context.Context, req *v1.JobKillRequest) (*v1.JobKillResponse, error) {
 	var res v1.JobKillResponse
 	if err := c.client.CallUnary(ctx, workerServiceJobKillSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *workerServiceClient) JobGraph(ctx context.Context, req *v1.JobGraphRequest) (*v1.JobGraphResponse, error) {
+	var res v1.JobGraphResponse
+	if err := c.client.CallUnary(ctx, workerServiceJobGraphSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *workerServiceClient) JobFlow(ctx context.Context, req *v1.JobFlowRequest) (*v1.JobFlowResponse, error) {
+	var res v1.JobFlowResponse
+	if err := c.client.CallUnary(ctx, workerServiceJobFlowSpec(), req, &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
@@ -575,6 +627,30 @@ func (h workerServiceHandler) jobKill(ctx context.Context, _ connect.Spec, strea
 		return err
 	}
 	res, err := h.svc.JobKill(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h workerServiceHandler) jobGraph(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.JobGraphRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.JobGraph(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h workerServiceHandler) jobFlow(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.JobFlowRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.JobFlow(ctx, &req)
 	if err != nil {
 		return err
 	}

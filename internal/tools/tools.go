@@ -36,14 +36,19 @@ type Handler func(ctx context.Context, args map[string]any, session, tenant stri
 func Registry(d Deps) map[string]Handler {
 	t := &toolset{deps: d}
 	return map[string]Handler{
-		"list-sandboxes":      t.listSandboxes,
-		"sandbox-info":        t.info,
-		"sandbox-exec":        t.exec,
-		"sandbox-job-start":   t.jobStart,
-		"sandbox-job-output":  t.jobOutput,
-		"sandbox-job-wait":    t.jobWait,
-		"sandbox-job-kill":    t.jobKill,
-		"sandbox-job-list":    t.jobList,
+		"list-sandboxes":     t.listSandboxes,
+		"sandbox-info":       t.info,
+		"sandbox-exec":       t.exec,
+		"sandbox-job-start":  t.jobStart,
+		"sandbox-job-output": t.jobOutput,
+		"sandbox-job-wait":   t.jobWait,
+		"sandbox-job-kill":   t.jobKill,
+		"sandbox-job-list":   t.jobList,
+		// The dataflow surface: easysh makes every stream an observable Flow, so a
+		// job's pipeline is inspectable instead of hidden behind its final stdout.
+		"sandbox-job-graph":   t.jobGraph,
+		"sandbox-job-flow":    t.jobFlow,
+		"sandbox-job-stdin":   t.jobStdin,
 		"sandbox-file-read":   t.fileRead,
 		"sandbox-file-write":  t.fileWrite,
 		"sandbox-file-list":   t.fileList,

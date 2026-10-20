@@ -28,7 +28,7 @@ syntax = "proto3";
 // WORKER_PORT pins the listen port). Client: ext-ops (ops-extension).
 package worker.v1;
 
-option go_package = "github.com/easydev-org/easyagent-sandbox-ext/gen/worker/v1;workerv1";
+option go_package = "github.com/easydev-org/easyworker/gen/worker/v1;workerv1";
 
 // ---- capability ----
 
@@ -162,6 +162,43 @@ message JobStdinResponse { bool ok = 1; }
 message JobKillRequest { string job_id = 1; }
 message JobKillResponse { bool ok = 1; }
 
+// ---- dataflow graph (easysh) -----------------------------------------------
+// The same shape easysh's own /api/jobs/{id}/graph returns, so the panel code
+// is portable between the two.
+message JobGraphRequest { string job_id = 1; }
+message JobGraphResponse {
+  repeated Flow flows = 1;
+  repeated FlowEdge edges = 2;
+}
+message Flow {
+  int64 fid = 1;
+  string kind = 2;     // pipe | file | here | dup | null | capture | terminal | fd
+  string fd = 3;       // stdin | stdout | stderr
+  string owner = 4;    // the stage this fd belongs to
+  string producer = 5; // the command that wrote it
+  string consumer = 6; // the command that read it
+  string path = 7;     // file path / here-doc tag
+  int64 bytes = 8;
+  int64 lines = 9;
+  // Source span of the owning stage (1-based; end exclusive), for highlighting.
+  int32 line = 10;
+  int32 col = 11;
+  int32 end_line = 12;
+  int32 end_col = 13;
+  string iter = 14; // loop-iteration label ("2", "2.1") when inside a loop
+}
+message FlowEdge {
+  int64 from_fid = 1;
+  int64 to_fid = 2;
+}
+
+// JobFlow returns one flow's intermediate result (the bytes a pipe carried).
+message JobFlowRequest {
+  string job_id = 1;
+  int64 fid = 2;
+}
+message JobFlowResponse { bytes data = 1; }
+
 // ---- files (binary-safe: content is bytes, no base64 hop) ----
 
 message FileReadRequest {
@@ -250,6 +287,10 @@ service WorkerService {
   rpc JobWait(JobWaitRequest) returns (JobWaitResponse);
   rpc JobStdin(JobStdinRequest) returns (JobStdinResponse);
   rpc JobKill(JobKillRequest) returns (JobKillResponse);
+  // JobGraph is the job's easysh dataflow: every flow (pipe/redirect/fd/...)
+  // and the edges between them. JobFlow returns one flow's intermediate bytes.
+  rpc JobGraph(JobGraphRequest) returns (JobGraphResponse);
+  rpc JobFlow(JobFlowRequest) returns (JobFlowResponse);
   rpc FileRead(FileReadRequest) returns (FileReadResponse);
   rpc FileWrite(FileWriteRequest) returns (FileWriteResponse);
   rpc FileDelete(FileDeleteRequest) returns (FileDeleteResponse);
