@@ -27,6 +27,10 @@ const (
 	MsgJobFlowEmpty           = "jobFlowEmpty"
 	MsgJobFlowMore            = "jobFlowMore"
 	MsgJobStdinOK             = "jobStdinOK"
+	MsgIntermediatesHead      = "intermediatesHead"
+	MsgIntermediatesCut       = "intermediatesCut"
+	MsgIntermediatesMore      = "intermediatesMore"
+	MsgIntermediatesHint      = "intermediatesHint"
 )
 
 // Catalog is the message table (open locale set: add a column per language).
@@ -94,6 +98,22 @@ var Catalog = easybusi18n.Catalog{
 	MsgJobStdinOK: {
 		"en": "wrote {n} byte(s) to job {id} stdin (closed={closed})",
 		"zh": "向任务 {id} 的标准输入写入 {n} 字节（close={closed}）",
+	},
+	MsgIntermediatesHead: {
+		"en": "\n--- intermediate results ({n} stream(s) that never reached stdout) ---",
+		"zh": "\n--- 中间结果（{n} 个未到达 stdout 的流）---",
+	},
+	MsgIntermediatesCut: {
+		"en": "... (truncated; this stream is {bytes} bytes — use sandbox-job-flow to page it)",
+		"zh": "……（已截断；该流共 {bytes} 字节 —— 用 sandbox-job-flow 分页读取）",
+	},
+	MsgIntermediatesMore: {
+		"en": "... {n} more stream(s) omitted — see sandbox-job-graph",
+		"zh": "……还有 {n} 个流未显示 —— 见 sandbox-job-graph",
+	},
+	MsgIntermediatesHint: {
+		"en": "these are what each pipeline stage produced; the stdout above is only the last stage",
+		"zh": "以上是每个管道阶段产生的数据；上面的 stdout 只是最后一段",
 	},
 	MsgNoSandboxes: {
 		"en": "no sandboxes configured",

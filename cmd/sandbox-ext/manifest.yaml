@@ -80,10 +80,15 @@ tools:
     required_config: [sandboxes]
   - name: sandbox-job-output
     description: >-
-      Read a window of a job's output lines.
+      Read a window of a job's output lines, then a bounded glimpse of the
+      INTERMEDIATE pipeline streams. In a pipeline the stdout belongs only to the
+      last stage; the upstream stages' output goes into pipes and is invisible in
+      stdout. Those streams are appended after the output so you can see what each
+      stage actually produced.
     descriptions:
       zh: >-
-        读取任务输出行的某个窗口。
+        读取任务输出行的某个窗口，随后附上管道「中间流」的有界摘要。管道里 stdout 只属于最后一段；
+        上游各段的输出进了管道，stdout 里看不到。这些流会附在输出后面，便于看清每段实际产出了什么。
     input_schema:
       type: object
       properties:
@@ -107,14 +112,35 @@ tools:
           description: "all | stdout | stderr."
           descriptions:
             zh: "all | stdout | stderr。"
+        intermediate:
+          type: boolean
+          description: >-
+            Append the intermediate pipeline streams (default true). Set false to
+            see only stdout/stderr.
+          descriptions:
+            zh: 附带管道的中间流（默认 true）。设为 false 只看 stdout/stderr。
+        intermediate_flows:
+          type: integer
+          description: "How many intermediate streams to show (default 3, max 10)."
+          descriptions:
+            zh: 显示多少个中间流（默认 3，最多 10）。
+        intermediate_lines:
+          type: integer
+          description: "Lines of each intermediate stream (default 8)."
+          descriptions:
+            zh: 每个中间流显示多少行（默认 8）。
       required: [job-id]
     required_config: [sandboxes]
   - name: sandbox-job-wait
     description: >-
-      Wait up to `timeout` seconds (default 60, max 90) for a job to finish; returns its state + the tail.
+      Wait up to `timeout` seconds (default 60, max 90) for a job to finish; returns
+      its state + the tail, plus a bounded glimpse of the INTERMEDIATE pipeline
+      streams (the upstream stages' output goes into pipes, so stdout alone shows
+      only the last stage).
     descriptions:
       zh: >-
-        最多等待 `timeout` 秒（默认 60，最大 90）等待任务结束；返回状态与尾部输出。
+        最多等待 `timeout` 秒（默认 60，最大 90）等待任务结束；返回状态与尾部输出，
+        并附上管道中间流的有界摘要（上游各段的输出去进了管道，stdout 只显示最后一段）。
     input_schema:
       type: object
       properties:
@@ -128,6 +154,12 @@ tools:
           description: "Seconds to wait (default 60, max 90)."
           descriptions:
             zh: "等待秒数（默认 60，最大 90）。"
+        intermediate:
+          type: boolean
+          description: >-
+            Append the intermediate pipeline streams (default true).
+          descriptions:
+            zh: 附带管道的中间流（默认 true）。
       required: [job-id]
     required_config: [sandboxes]
   - name: sandbox-job-kill

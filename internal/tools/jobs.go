@@ -153,9 +153,26 @@ func (t *toolset) jobOutput(ctx context.Context, args map[string]any, session, t
 	if err != nil {
 		return extension.ToolResultData{}, &extension.TypedError{Code: easybus.ToolResultErrorCodeNotFound, Message: fmt.Sprintf("job-output: %v", err)}
 	}
+	cl := t.deps.Cache.Worker(ep(s))
+	body := strings.Join(res.GetLines(), "\n")
+	// Append a bounded glimpse of the streams that never reached stdout: in a
+	// pipeline the upstream stages' output goes into a pipe, so stdout alone shows
+	// only the last stage. Opt-out via intermediate: false.
+	inter := ""
+	if argBool(args, "intermediate", true) {
+		inter = renderIntermediates(ctx, cl, jobID,
+			argInt(args, "intermediate_flows", defaultIntermediateFlows),
+			argInt(args, "intermediate_lines", defaultIntermediateLines))
+	}
+	if inter != "" {
+		body = strings.TrimRight(body, "\n") + "\n" + inter
+	}
 	return extension.ToolResultData{
-		Content: strings.Join(res.GetLines(), "\n"),
-		Data:    map[string]any{"lines": res.GetLines(), "totalLines": res.GetTotalLines(), "done": res.GetDone()},
+		Content: body,
+		Data: map[string]any{
+			"lines": res.GetLines(), "totalLines": res.GetTotalLines(), "done": res.GetDone(),
+			"intermediates": inter,
+		},
 	}, nil
 }
 
@@ -173,6 +190,14 @@ func (t *toolset) jobWait(ctx context.Context, args map[string]any, session, ten
 	cl := t.deps.Cache.Worker(ep(s))
 	state, code := waitForJob(ctx, cl, jobID, time.Duration(timeoutS)*time.Second)
 	text, _ := renderOutput(ctx, cl, jobID, -200, 0, "all")
+	// Same reasoning as jobOutput: stdout/stderr is only the tail of a pipeline.
+	if argBool(args, "intermediate", true) {
+		if inter := renderIntermediates(ctx, cl, jobID,
+			argInt(args, "intermediate_flows", defaultIntermediateFlows),
+			argInt(args, "intermediate_lines", defaultIntermediateLines)); inter != "" {
+			text = strings.TrimRight(text, "\n") + "\n" + inter
+		}
+	}
 	head := i18n.T(t.locale(session, tenant), i18n.MsgJobDone, i18n.Params{"id": jobID, "state": state, "code": fmt.Sprintf("%d", code)})
 	return extension.ToolResultData{Content: head + "\n" + text, Data: map[string]any{"jobId": jobID, "state": state, "exitCode": code}}, nil
 }
