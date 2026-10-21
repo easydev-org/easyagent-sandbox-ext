@@ -21,11 +21,11 @@ func CloseWatchers() { watcher.CloseAll() }
 
 // jobWatcher relays a running job's output to the UI while the job runs.
 //
-// WHY it outlives the tool call: sandbox-job-start returns as soon as the job is
-// launched — that is the whole point of it being a separate tool from
-// sandbox-exec. The output, however, keeps coming for as long as the command
-// runs, which may be minutes. Tying the relay to the tool call would mean the
-// stream stops exactly when it becomes useful.
+// WHY it outlives the tool call: sandbox-job-start waits only a few seconds for a
+// command, and returns a job id if it is still running. The OUTPUT, though, keeps
+// arriving for as long as the command runs — minutes, potentially. Tying the relay
+// to the tool call would stop the stream at the exact moment the caller was told
+// "it is still going, watch it here".
 //
 // So each watch gets its OWN lifetime (background context), and the set of live
 // watches is tracked so the extension can cancel them all on shutdown — otherwise

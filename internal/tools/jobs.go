@@ -81,38 +81,18 @@ func (t *toolset) info(ctx context.Context, args map[string]any, callID, session
 	}, nil
 }
 
-func (t *toolset) exec(ctx context.Context, args map[string]any, callID, session, tenant string) (extension.ToolResultData, error) {
-	s, err := t.resolve(args, session, tenant)
-	if err != nil {
-		return extension.ToolResultData{}, err
-	}
-	command := argStr(args, "command")
-	if command == "" {
-		return extension.ToolResultData{}, &extension.TypedError{Code: easybus.ToolResultErrorCodeInvalidArgument, Message: "command is required"}
-	}
-	// Clamp, do not reset: asking for >60s must give 60s, not the 5s default.
-	timeoutS := clampInt(args, "timeout", 5, 60)
-	cl := t.deps.Cache.Worker(ep(s))
-	started, err := cl.Execute(ctx, &workerv1.ExecuteRequest{
-		Command: command, Workdir: argStr(args, "workdir"), Env: argEnv(args),
-	})
-	if err != nil {
-		return extension.ToolResultData{}, &extension.TypedError{Code: easybus.ToolResultErrorCodeRetryable, Message: fmt.Sprintf("execute: %v", err)}
-	}
-	jobID := started.GetJobId()
-	state, code := waitForJob(ctx, cl, jobID, time.Duration(timeoutS)*time.Second)
-	if state == "running" {
-		text, _ := renderOutput(ctx, cl, jobID, 0, 200, "all")
-		return extension.ToolResultData{
-			Content: i18n.T(t.locale(session, tenant), i18n.MsgJobStill, i18n.Params{"id": jobID, "timeout": fmt.Sprintf("%d", timeoutS)}) + "\n" + text,
-			Data:    map[string]any{"jobId": jobID, "state": state},
-		}, nil
-	}
-	text, _ := renderOutput(ctx, cl, jobID, 0, 0, "all")
-	head := i18n.T(t.locale(session, tenant), i18n.MsgJobDone, i18n.Params{"id": jobID, "state": state, "code": fmt.Sprintf("%d", code)})
-	return extension.ToolResultData{Content: head + "\n" + text, Data: map[string]any{"jobId": jobID, "state": state, "exitCode": code}}, nil
-}
-
+// jobStart runs a command and WAITS for it, briefly.
+//
+// This is the single "run a command" tool: it absorbed sandbox-exec. Waiting a
+// little is what callers actually want (nearly every command finishes in under a
+// second, and a tool that always answers "started, id=k3j9" makes the model spend
+// another turn asking for the output). Waiting forever is what callers must never
+// get, because the turn is blocked for that whole time.
+//
+// So: wait up to `timeout` (default 10s, clamped to 60s), and if the command is
+// still running at the deadline, return the job id plus what it has printed so
+// far. The job keeps running, and its output keeps arriving as tool-progress, so
+// the caller can watch it live instead of blocking.
 func (t *toolset) jobStart(ctx context.Context, args map[string]any, callID, session, tenant string) (extension.ToolResultData, error) {
 	s, err := t.resolve(args, session, tenant)
 	if err != nil {
@@ -122,30 +102,52 @@ func (t *toolset) jobStart(ctx context.Context, args map[string]any, callID, ses
 	if command == "" {
 		return extension.ToolResultData{}, &extension.TypedError{Code: easybus.ToolResultErrorCodeInvalidArgument, Message: "command is required"}
 	}
-	started, err := t.deps.Cache.Worker(ep(s)).Execute(ctx, &workerv1.ExecuteRequest{
+	// Clamp, do not reset: asking for >60s must give 60s, not the default.
+	timeoutS := clampInt(args, "timeout", defaultJobStartWaitS, maxJobStartWaitS)
+	cl := t.deps.Cache.Worker(ep(s))
+	started, err := cl.Execute(ctx, &workerv1.ExecuteRequest{
 		Command: command, Workdir: argStr(args, "workdir"), Env: argEnv(args),
 	})
 	if err != nil {
 		return extension.ToolResultData{}, &extension.TypedError{Code: easybus.ToolResultErrorCodeRetryable, Message: fmt.Sprintf("execute: %v", err)}
 	}
+	jobID := started.GetJobId()
 	// Relay the job's output to the UI as it arrives.
 	//
-	// This is what makes "start a long command and watch it" work: the tool
-	// returns immediately (that is its contract), and the output is streamed on
-	// the side channel until the job exits. The relay is best-effort — if the UI
-	// is not listening, or the worker cannot be watched, the job still runs and
-	// the final result is unaffected.
+	// Started BEFORE the wait so the caller sees output during the wait, not only
+	// after it. Best-effort: if the worker cannot be watched the job still runs and
+	// the result is unaffected.
 	//
-	// Turn it off with follow=false for a fire-and-forget job whose output nobody
-	// will read live.
+	// follow=false opts out for a job whose output nobody reads live.
 	if followEnabled(args) {
-		watcher.Watch(ctx, t.deps.Cache.Worker(ep(s)), started.GetJobId())
+		watcher.Watch(ctx, cl, jobID)
 	}
+	state, code := waitForJob(ctx, cl, jobID, time.Duration(timeoutS)*time.Second)
+	if state == "running" {
+		// Still going: hand back the id and whatever it has produced. This is NOT a
+		// failure — the command is running and its output keeps streaming.
+		text, _ := renderOutput(ctx, cl, jobID, 0, 200, "all")
+		return extension.ToolResultData{
+			Content: i18n.T(t.locale(session, tenant), i18n.MsgJobStill, i18n.Params{"id": jobID, "timeout": fmt.Sprintf("%d", timeoutS)}) + "\n" + text,
+			Data:    map[string]any{"jobId": jobID, "state": state, "timeoutSec": timeoutS},
+		}, nil
+	}
+	text, _ := renderOutput(ctx, cl, jobID, 0, 0, "all")
+	head := i18n.T(t.locale(session, tenant), i18n.MsgJobDone, i18n.Params{"id": jobID, "state": state, "code": fmt.Sprintf("%d", code)})
 	return extension.ToolResultData{
-		Content: i18n.T(t.locale(session, tenant), i18n.MsgJobStarted, i18n.Params{"id": started.GetJobId()}),
-		Data:    map[string]any{"jobId": started.GetJobId()},
+		Content: head + "\n" + text,
+		Data:    map[string]any{"jobId": jobID, "state": state, "exitCode": code},
 	}, nil
 }
+
+const (
+	// defaultJobStartWaitS is how long a command is given before the tool hands
+	// back a job id instead. Most commands finish well inside it, so the common
+	// case returns the output directly and costs no extra turn.
+	defaultJobStartWaitS = 10
+	// maxJobStartWaitS caps the wait so a caller cannot block a turn for minutes.
+	maxJobStartWaitS = 60
+)
 
 // followEnabled reads the optional `follow` argument (default true).
 //

@@ -31,12 +31,17 @@ tools:
         {}
       required: []
     required_config: [sandboxes]
-  - name: sandbox-exec
+  - name: sandbox-job-start
     description: >-
-      Run a short shell command and wait up to `timeout` seconds (default 5, max 60). Returns the job id; on completion the output, on timeout the oldest 200 lines.
+      Run a shell command and wait up to `timeout` seconds (default 10, max 60).
+      Returns the job id plus the output when it finishes. If it is still running
+      at the deadline, returns the job id and the output so far — the job keeps
+      running, and its output streams live; read it later with sandbox-job-output.
     descriptions:
       zh: >-
-        运行一条短 shell 命令并最多等待 `timeout` 秒（默认 5，最大 60）。返回任务 id；完成时返回输出，超时返回最早的 200 行。
+        运行一条 shell 命令并最多等待 `timeout` 秒（默认 10，最大 60）。完成时返回任务 id 与输出；
+        到超时仍在运行则返回任务 id 与已有输出——任务继续运行，输出会实时流式显示，
+        之后可用 sandbox-job-output 读取。
     input_schema:
       type: object
       properties:
@@ -52,30 +57,14 @@ tools:
             zh: "工作目录，相对于工作区根。"
         timeout:
           type: integer
-          description: "Seconds to wait (default 5, max 60)."
+          description: "Seconds to wait before returning the job id (default 10, max 60)."
           descriptions:
-            zh: "等待秒数（默认 5，最大 60）。"
-      required: [command]
-    required_config: [sandboxes]
-  - name: sandbox-job-start
-    description: >-
-      Start a long-running command; returns its job id immediately.
-    descriptions:
-      zh: >-
-        启动一个长时间运行的命令；立即返回其任务 id。
-    input_schema:
-      type: object
-      properties:
-        command:
-          type: string
-          description: "Shell command to run."
+            zh: "等待秒数，超过则先返回任务 id（默认 10，最大 60）。"
+        follow:
+          type: boolean
+          description: "Stream the output live while it runs (default true)."
           descriptions:
-            zh: "要运行的 shell 命令。"
-        workdir:
-          type: string
-          description: "Working dir, relative to the workspace root."
-          descriptions:
-            zh: "工作目录，相对于工作区根。"
+            zh: "是否实时流式输出（默认 true）。"
       required: [command]
     required_config: [sandboxes]
   - name: sandbox-job-output

@@ -69,7 +69,7 @@ func newRegistry(t *testing.T, url string) map[string]Handler {
 func TestExecRunsOnSandbox(t *testing.T) {
 	f, url := newFakeServer(t)
 	reg := newRegistry(t, url)
-	res, err := reg["sandbox-exec"](context.Background(), map[string]any{"command": "echo hi"}, "", "s", "ten")
+	res, err := reg["sandbox-job-start"](context.Background(), map[string]any{"command": "echo hi"}, "", "s", "ten")
 	if err != nil {
 		t.Fatal(err)
 	}

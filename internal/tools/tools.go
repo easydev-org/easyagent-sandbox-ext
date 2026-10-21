@@ -50,7 +50,6 @@ func Registry(d Deps) map[string]Handler {
 	return map[string]Handler{
 		"list-sandboxes":     t.listSandboxes,
 		"sandbox-info":       t.info,
-		"sandbox-exec":       t.exec,
 		"sandbox-job-start":  t.jobStart,
 		"sandbox-job-output": t.jobOutput,
 		"sandbox-job-wait":   t.jobWait,

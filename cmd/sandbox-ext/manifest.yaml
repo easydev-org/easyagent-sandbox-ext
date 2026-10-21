@@ -31,12 +31,17 @@ tools:
         {}
       required: []
     required_config: [sandboxes]
-  - name: sandbox-exec
+  - name: sandbox-job-start
     description: >-
-      Run a short shell command and wait up to `timeout` seconds (default 5, max 60). Returns the job id; on completion the output, on timeout the oldest 200 lines.
+      Run a shell command and wait up to `timeout` seconds (default 10, max 60).
+      Returns the job id plus the output when it finishes. If it is still running
+      at the deadline, returns the job id and the output so far — the job keeps
+      running, and its output streams live; read it later with sandbox-job-output.
     descriptions:
       zh: >-
-        运行一条短 shell 命令并最多等待 `timeout` 秒（默认 5，最大 60）。返回任务 id；完成时返回输出，超时返回最早的 200 行。
+        运行一条 shell 命令并最多等待 `timeout` 秒（默认 10，最大 60）。完成时返回任务 id 与输出；
+        到超时仍在运行则返回任务 id 与已有输出——任务继续运行，输出会实时流式显示，
+        之后可用 sandbox-job-output 读取。
     input_schema:
       type: object
       properties:
@@ -52,30 +57,14 @@ tools:
             zh: "工作目录，相对于工作区根。"
         timeout:
           type: integer
-          description: "Seconds to wait (default 5, max 60)."
+          description: "Seconds to wait before returning the job id (default 10, max 60)."
           descriptions:
-            zh: "等待秒数（默认 5，最大 60）。"
-      required: [command]
-    required_config: [sandboxes]
-  - name: sandbox-job-start
-    description: >-
-      Start a long-running command; returns its job id immediately.
-    descriptions:
-      zh: >-
-        启动一个长时间运行的命令；立即返回其任务 id。
-    input_schema:
-      type: object
-      properties:
-        command:
-          type: string
-          description: "Shell command to run."
+            zh: "等待秒数，超过则先返回任务 id（默认 10，最大 60）。"
+        follow:
+          type: boolean
+          description: "Stream the output live while it runs (default true)."
           descriptions:
-            zh: "要运行的 shell 命令。"
-        workdir:
-          type: string
-          description: "Working dir, relative to the workspace root."
-          descriptions:
-            zh: "工作目录，相对于工作区根。"
+            zh: "是否实时流式输出（默认 true）。"
       required: [command]
     required_config: [sandboxes]
   - name: sandbox-job-output
@@ -228,12 +217,15 @@ tools:
   - name: sandbox-job-flow
     description: >-
       Read ONE intermediate stream of a job, by fid (get the fid from
-      sandbox-job-graph). Paged by byte offset/limit; text is shown with line
-      numbers, binary is reported by size instead of dumped.
+      sandbox-job-graph). Paged by LINE (offset/limit) and optionally filtered by
+      a regexp (grep) — the filter is applied BEFORE the window, so offset/limit
+      page through what matched. Lines are numbered absolutely; binary content is
+      reported by size instead of dumped.
     descriptions:
       zh: >-
-        按 fid 读取任务的某一个中间流（fid 来自 sandbox-job-graph）。按字节 offset/limit 分页；
-        文本带行号显示，二进制只报大小而不倾倒内容。
+        按 fid 读取任务的某一个中间流（fid 来自 sandbox-job-graph）。按「行」分页（offset/limit），
+        并可用正则（grep）过滤——过滤先于窗口，故 offset/limit 是在匹配结果上翻页。
+        行号是绝对行号；二进制只报大小而不倾倒内容。
     input_schema:
       type: object
       properties:
@@ -247,16 +239,26 @@ tools:
           description: "The stream id, from sandbox-job-graph."
           descriptions:
             zh: "流 id，来自 sandbox-job-graph。"
+        grep:
+          type: string
+          description: >-
+            Regexp; only matching lines are kept, THEN offset/limit page through
+            them. Invalid regexps are rejected rather than silently matching
+            nothing.
+          descriptions:
+            zh: >-
+              正则表达式；只保留匹配的行，然后在其上按 offset/limit 分页。
+              非法正则会报错，而不是静默地匹配不到任何内容。
         offset:
           type: integer
-          description: "Skip this many bytes (0 = start)."
+          description: "Skip this many LINES (0 = start; applies after grep)."
           descriptions:
-            zh: "跳过多少字节（0 表示从头）。"
+            zh: "跳过多少「行」（0 表示从头；在 grep 之后生效）。"
         limit:
           type: integer
-          description: "Max bytes to return (0 = all, capped at 64 KiB)."
+          description: "Max LINES to return (default 200, max 1000)."
           descriptions:
-            zh: "最多返回多少字节（0 表示全部，上限 64 KiB）。"
+            zh: "最多返回多少「行」（默认 200，上限 1000）。"
       required: [job-id, fid]
     required_config: [sandboxes]
     namespace: jobs
