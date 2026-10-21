@@ -716,7 +716,17 @@ tools:
 
 config:
   - name: sandboxes
-    type: string
+    # A real FORM, not a JSON blob.
+    #
+    # This used to be `type: string` with a description telling the user to type
+    # a JSON array by hand. That is the config every tool here depends on — it is
+    # `required_config` on all of them — so a typo meant every tool in the
+    # extension refused to run, with an error that named no field. Declaring the
+    # shape lets the console render a list editor with per-item validation
+    # (name / url / token / os) instead.
+    type: list
+    item_type: object
+    min_items: 1
     kind: secret
     scope: global
     description: >-
@@ -729,3 +739,31 @@ config:
         本扩展可运行的 easyworker 沙箱列表（JSON），每项
         {"name":"...","url":"http://worker:80","token":"..."}。工具的 `sandbox` 参数按名选择；
         省略时默认第一个。该值为机密：永不返回给客户端。
+    fields:
+      - name: name
+        type: string
+        required: true
+        description: Sandbox name, used to select it from the sandbox / computer tools.
+        descriptions:
+          zh: 沙箱名称，sandbox / computer 工具用它来选择。
+      - name: url
+        type: string
+        format: uri
+        required: true
+        description: Worker HTTP base URL (e.g. http://worker.dev.svc.cluster.local:80).
+        descriptions:
+          zh: worker 的 HTTP 基础地址（如 http://worker.dev.svc.cluster.local:80）。
+      - name: token
+        type: string
+        kind: secret
+        required: true
+        description: Worker access token. Masked in the console; never returned.
+        descriptions:
+          zh: worker 访问令牌。控制台中以掩码显示，永不回传。
+      - name: os
+        type: enum
+        enum_values: [linux, windows, macos, android]
+        default: linux
+        description: Sandbox OS, for tooling that differs per platform.
+        descriptions:
+          zh: 沙箱操作系统，供按平台区分的工具使用。
