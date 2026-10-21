@@ -27,10 +27,22 @@ type Deps struct {
 	// Bus is the extension's bus connection, used for the agent file RPCs
 	// (download/upload persist bytes through the agent — no local store).
 	Bus bus.Bus
+	// Progress reports an in-flight update for the tool call.
+	//
+	// This is the UI side-channel: it reaches the agent over
+	// easybus.tool.progress.<callID> and is never fed into the model's context, so
+	// streaming a command's output here costs no tokens and cannot confuse the
+	// conversation. nil means "nobody is listening" and the reporter is skipped.
+	Progress func(ctx context.Context, callID string, p *easybus.ToolProgress)
 }
 
 // Handler is one tool implementation.
-type Handler func(ctx context.Context, args map[string]any, session, tenant string) (extension.ToolResultData, error)
+//
+// callID is the identity of THIS invocation. It is needed to address progress
+// updates (easybus.tool.progress.<callID>) back to the caller that is watching
+// this specific tool call — without it a long-running command has no way to say
+// anything until it finishes.
+type Handler func(ctx context.Context, args map[string]any, callID, session, tenant string) (extension.ToolResultData, error)
 
 // Registry builds the sandbox-* + computer-* handler map.
 func Registry(d Deps) map[string]Handler {
@@ -111,7 +123,7 @@ func ep(s config.Sandbox) sandbox.Endpoint { return sandbox.Endpoint{URL: s.URL,
 
 // ---- discovery -------------------------------------------------------------
 
-func (t *toolset) listSandboxes(ctx context.Context, args map[string]any, session, tenant string) (extension.ToolResultData, error) {
+func (t *toolset) listSandboxes(ctx context.Context, args map[string]any, callID, session, tenant string) (extension.ToolResultData, error) {
 	raw := ""
 	if t.deps.GetConfig != nil {
 		if s, ok := t.deps.GetConfig(config.KnobSandboxes, session, tenant).(string); ok {

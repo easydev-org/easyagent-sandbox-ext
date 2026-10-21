@@ -48,7 +48,7 @@ func splitFlowLines(s string) []string {
 // observable object, but a job's final stdout hides the pipeline that produced
 // it. With this, "which command wrote this, into what, and how big" is answerable
 // instead of guessed.
-func (t *toolset) jobGraph(ctx context.Context, args map[string]any, session, tenant string) (extension.ToolResultData, error) {
+func (t *toolset) jobGraph(ctx context.Context, args map[string]any, callID, session, tenant string) (extension.ToolResultData, error) {
 	s, err := t.resolve(args, session, tenant)
 	if err != nil {
 		return extension.ToolResultData{}, err
@@ -166,7 +166,7 @@ func (t *toolset) jobGraph(ctx context.Context, args map[string]any, session, te
 // Paged by BYTE offset/limit: a flow's size is known from the graph, and bytes
 // are what the caller wants to inspect (a partial line is still evidence). Text
 // is split into lines for display only.
-func (t *toolset) jobFlow(ctx context.Context, args map[string]any, session, tenant string) (extension.ToolResultData, error) {
+func (t *toolset) jobFlow(ctx context.Context, args map[string]any, callID, session, tenant string) (extension.ToolResultData, error) {
 	s, err := t.resolve(args, session, tenant)
 	if err != nil {
 		return extension.ToolResultData{}, err
@@ -295,7 +295,7 @@ func (t *toolset) jobFlow(ctx context.Context, args map[string]any, session, ten
 		},
 	}, nil
 }
-func (t *toolset) jobStdin(ctx context.Context, args map[string]any, session, tenant string) (extension.ToolResultData, error) {
+func (t *toolset) jobStdin(ctx context.Context, args map[string]any, callID, session, tenant string) (extension.ToolResultData, error) {
 	s, err := t.resolve(args, session, tenant)
 	if err != nil {
 		return extension.ToolResultData{}, err

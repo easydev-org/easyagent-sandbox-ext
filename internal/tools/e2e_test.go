@@ -69,7 +69,7 @@ func newRegistry(t *testing.T, url string) map[string]Handler {
 func TestExecRunsOnSandbox(t *testing.T) {
 	f, url := newFakeServer(t)
 	reg := newRegistry(t, url)
-	res, err := reg["sandbox-exec"](context.Background(), map[string]any{"command": "echo hi"}, "s", "ten")
+	res, err := reg["sandbox-exec"](context.Background(), map[string]any{"command": "echo hi"}, "", "s", "ten")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,18 +85,18 @@ func TestSandboxSelection(t *testing.T) {
 	_, url := newFakeServer(t)
 	reg := newRegistry(t, url)
 	// An unknown sandbox name is rejected.
-	if _, err := reg["sandbox-info"](context.Background(), map[string]any{"sandbox": "nope"}, "s", "ten"); err == nil {
+	if _, err := reg["sandbox-info"](context.Background(), map[string]any{"sandbox": "nope"}, "", "s", "ten"); err == nil {
 		t.Error("unknown sandbox should error")
 	}
 	// The configured name works.
-	if _, err := reg["sandbox-info"](context.Background(), map[string]any{"sandbox": "pod-a"}, "s", "ten"); err != nil {
+	if _, err := reg["sandbox-info"](context.Background(), map[string]any{"sandbox": "pod-a"}, "", "s", "ten"); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestNotConfigured(t *testing.T) {
 	reg := Registry(Deps{Cache: sandbox.NewClientCache(1), GetConfig: func(string, string, string) any { return "" }})
-	if _, err := reg["sandbox-info"](context.Background(), map[string]any{}, "s", "ten"); err == nil {
+	if _, err := reg["sandbox-info"](context.Background(), map[string]any{}, "", "s", "ten"); err == nil {
 		t.Error("unconfigured should error")
 	}
 }
@@ -104,7 +104,7 @@ func TestNotConfigured(t *testing.T) {
 func TestListSandboxes(t *testing.T) {
 	_, url := newFakeServer(t)
 	reg := newRegistry(t, url)
-	res, err := reg["list-sandboxes"](context.Background(), map[string]any{}, "s", "ten")
+	res, err := reg["list-sandboxes"](context.Background(), map[string]any{}, "", "s", "ten")
 	if err != nil {
 		t.Fatal(err)
 	}

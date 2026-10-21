@@ -20,7 +20,7 @@ func joinLines(lines []string) string {
 	return out
 }
 
-func (t *toolset) computerInfo(ctx context.Context, args map[string]any, session, tenant string) (extension.ToolResultData, error) {
+func (t *toolset) computerInfo(ctx context.Context, args map[string]any, callID, session, tenant string) (extension.ToolResultData, error) {
 	s, err := t.resolve(args, session, tenant)
 	if err != nil {
 		return extension.ToolResultData{}, err
@@ -35,7 +35,7 @@ func (t *toolset) computerInfo(ctx context.Context, args map[string]any, session
 	}, nil
 }
 
-func (t *toolset) computerApps(ctx context.Context, args map[string]any, session, tenant string) (extension.ToolResultData, error) {
+func (t *toolset) computerApps(ctx context.Context, args map[string]any, callID, session, tenant string) (extension.ToolResultData, error) {
 	s, err := t.resolve(args, session, tenant)
 	if err != nil {
 		return extension.ToolResultData{}, err
@@ -55,7 +55,7 @@ func (t *toolset) computerApps(ctx context.Context, args map[string]any, session
 	return extension.ToolResultData{Content: joinLines(lines), Data: map[string]any{"apps": res.GetApps()}}, nil
 }
 
-func (t *toolset) computerSnapshot(ctx context.Context, args map[string]any, session, tenant string) (extension.ToolResultData, error) {
+func (t *toolset) computerSnapshot(ctx context.Context, args map[string]any, callID, session, tenant string) (extension.ToolResultData, error) {
 	s, err := t.resolve(args, session, tenant)
 	if err != nil {
 		return extension.ToolResultData{}, err
@@ -67,7 +67,7 @@ func (t *toolset) computerSnapshot(ctx context.Context, args map[string]any, ses
 	return extension.ToolResultData{Content: res.GetText()}, nil
 }
 
-func (t *toolset) computerFind(ctx context.Context, args map[string]any, session, tenant string) (extension.ToolResultData, error) {
+func (t *toolset) computerFind(ctx context.Context, args map[string]any, callID, session, tenant string) (extension.ToolResultData, error) {
 	s, err := t.resolve(args, session, tenant)
 	if err != nil {
 		return extension.ToolResultData{}, err
@@ -87,7 +87,7 @@ func (t *toolset) computerFind(ctx context.Context, args map[string]any, session
 	return extension.ToolResultData{Content: res.GetText()}, nil
 }
 
-func (t *toolset) computerAction(ctx context.Context, args map[string]any, session, tenant string) (extension.ToolResultData, error) {
+func (t *toolset) computerAction(ctx context.Context, args map[string]any, callID, session, tenant string) (extension.ToolResultData, error) {
 	s, err := t.resolve(args, session, tenant)
 	if err != nil {
 		return extension.ToolResultData{}, err
@@ -103,7 +103,7 @@ func (t *toolset) computerAction(ctx context.Context, args map[string]any, sessi
 	return extension.ToolResultData{Content: fmt.Sprintf("%s %s", action, target)}, nil
 }
 
-func (t *toolset) computerClick(ctx context.Context, args map[string]any, session, tenant string) (extension.ToolResultData, error) {
+func (t *toolset) computerClick(ctx context.Context, args map[string]any, callID, session, tenant string) (extension.ToolResultData, error) {
 	s, err := t.resolve(args, session, tenant)
 	if err != nil {
 		return extension.ToolResultData{}, err
@@ -118,7 +118,7 @@ func (t *toolset) computerClick(ctx context.Context, args map[string]any, sessio
 	return extension.ToolResultData{Content: "clicked"}, nil
 }
 
-func (t *toolset) computerType(ctx context.Context, args map[string]any, session, tenant string) (extension.ToolResultData, error) {
+func (t *toolset) computerType(ctx context.Context, args map[string]any, callID, session, tenant string) (extension.ToolResultData, error) {
 	s, err := t.resolve(args, session, tenant)
 	if err != nil {
 		return extension.ToolResultData{}, err
@@ -133,7 +133,7 @@ func (t *toolset) computerType(ctx context.Context, args map[string]any, session
 	return extension.ToolResultData{Content: "typed"}, nil
 }
 
-func (t *toolset) computerKey(ctx context.Context, args map[string]any, session, tenant string) (extension.ToolResultData, error) {
+func (t *toolset) computerKey(ctx context.Context, args map[string]any, callID, session, tenant string) (extension.ToolResultData, error) {
 	s, err := t.resolve(args, session, tenant)
 	if err != nil {
 		return extension.ToolResultData{}, err
@@ -148,7 +148,7 @@ func (t *toolset) computerKey(ctx context.Context, args map[string]any, session,
 	return extension.ToolResultData{Content: "pressed " + key}, nil
 }
 
-func (t *toolset) computerScroll(ctx context.Context, args map[string]any, session, tenant string) (extension.ToolResultData, error) {
+func (t *toolset) computerScroll(ctx context.Context, args map[string]any, callID, session, tenant string) (extension.ToolResultData, error) {
 	s, err := t.resolve(args, session, tenant)
 	if err != nil {
 		return extension.ToolResultData{}, err
@@ -159,7 +159,7 @@ func (t *toolset) computerScroll(ctx context.Context, args map[string]any, sessi
 	return extension.ToolResultData{Content: "scrolled"}, nil
 }
 
-func (t *toolset) computerDrag(ctx context.Context, args map[string]any, session, tenant string) (extension.ToolResultData, error) {
+func (t *toolset) computerDrag(ctx context.Context, args map[string]any, callID, session, tenant string) (extension.ToolResultData, error) {
 	s, err := t.resolve(args, session, tenant)
 	if err != nil {
 		return extension.ToolResultData{}, err
@@ -174,7 +174,7 @@ func (t *toolset) computerDrag(ctx context.Context, args map[string]any, session
 	return extension.ToolResultData{Content: "dragged"}, nil
 }
 
-func (t *toolset) computerScreenshot(ctx context.Context, args map[string]any, session, tenant string) (extension.ToolResultData, error) {
+func (t *toolset) computerScreenshot(ctx context.Context, args map[string]any, callID, session, tenant string) (extension.ToolResultData, error) {
 	s, err := t.resolve(args, session, tenant)
 	if err != nil {
 		return extension.ToolResultData{}, err

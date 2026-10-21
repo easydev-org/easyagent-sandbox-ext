@@ -54,7 +54,7 @@ func isBinary(content []byte) bool {
 	return false
 }
 
-func (t *toolset) fileRead(ctx context.Context, args map[string]any, session, tenant string) (extension.ToolResultData, error) {
+func (t *toolset) fileRead(ctx context.Context, args map[string]any, callID, session, tenant string) (extension.ToolResultData, error) {
 	s, err := t.resolve(args, session, tenant)
 	if err != nil {
 		return extension.ToolResultData{}, err
@@ -76,7 +76,7 @@ func (t *toolset) fileRead(ctx context.Context, args map[string]any, session, te
 	return extension.ToolResultData{Content: text, Data: map[string]any{"totalLines": res.GetTotalLines()}}, nil
 }
 
-func (t *toolset) fileWrite(ctx context.Context, args map[string]any, session, tenant string) (extension.ToolResultData, error) {
+func (t *toolset) fileWrite(ctx context.Context, args map[string]any, callID, session, tenant string) (extension.ToolResultData, error) {
 	s, err := t.resolve(args, session, tenant)
 	if err != nil {
 		return extension.ToolResultData{}, err
@@ -95,7 +95,7 @@ func (t *toolset) fileWrite(ctx context.Context, args map[string]any, session, t
 	return extension.ToolResultData{Content: text}, nil
 }
 
-func (t *toolset) fileList(ctx context.Context, args map[string]any, session, tenant string) (extension.ToolResultData, error) {
+func (t *toolset) fileList(ctx context.Context, args map[string]any, callID, session, tenant string) (extension.ToolResultData, error) {
 	s, err := t.resolve(args, session, tenant)
 	if err != nil {
 		return extension.ToolResultData{}, err
@@ -117,7 +117,7 @@ func (t *toolset) fileList(ctx context.Context, args map[string]any, session, te
 	return extension.ToolResultData{Content: strings.Join(lines, "\n"), Data: map[string]any{"files": res.GetFiles(), "truncated": res.GetTruncated()}}, nil
 }
 
-func (t *toolset) fileDelete(ctx context.Context, args map[string]any, session, tenant string) (extension.ToolResultData, error) {
+func (t *toolset) fileDelete(ctx context.Context, args map[string]any, callID, session, tenant string) (extension.ToolResultData, error) {
 	s, err := t.resolve(args, session, tenant)
 	if err != nil {
 		return extension.ToolResultData{}, err
@@ -129,7 +129,7 @@ func (t *toolset) fileDelete(ctx context.Context, args map[string]any, session, 
 	return extension.ToolResultData{Content: "deleted " + path}, nil
 }
 
-func (t *toolset) fileMove(ctx context.Context, args map[string]any, session, tenant string) (extension.ToolResultData, error) {
+func (t *toolset) fileMove(ctx context.Context, args map[string]any, callID, session, tenant string) (extension.ToolResultData, error) {
 	s, err := t.resolve(args, session, tenant)
 	if err != nil {
 		return extension.ToolResultData{}, err
@@ -141,7 +141,7 @@ func (t *toolset) fileMove(ctx context.Context, args map[string]any, session, te
 	return extension.ToolResultData{Content: fmt.Sprintf("moved %s -> %s", from, to)}, nil
 }
 
-func (t *toolset) fileCopy(ctx context.Context, args map[string]any, session, tenant string) (extension.ToolResultData, error) {
+func (t *toolset) fileCopy(ctx context.Context, args map[string]any, callID, session, tenant string) (extension.ToolResultData, error) {
 	s, err := t.resolve(args, session, tenant)
 	if err != nil {
 		return extension.ToolResultData{}, err

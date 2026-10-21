@@ -129,7 +129,7 @@ func TestDownloadUploadRoundTrip(t *testing.T) {
 
 	ctx := context.Background()
 	// download: sandbox file -> agent file:<code>
-	res, err := r["sandbox-download"](ctx, map[string]any{"sandbox": "pod-a", "path": "/w/hello.txt"}, "s", "ten")
+	res, err := r["sandbox-download"](ctx, map[string]any{"sandbox": "pod-a", "path": "/w/hello.txt"}, "call-1", "s", "ten")
 	if err != nil {
 		t.Fatalf("download: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestDownloadUploadRoundTrip(t *testing.T) {
 		t.Fatalf("no code: %+v", res.Data)
 	}
 	// upload: agent file:<code> -> a new sandbox path
-	if _, err := r["sandbox-upload"](ctx, map[string]any{"sandbox": "pod-a", "code": code, "path": "/w/copy.txt"}, "s", "ten"); err != nil {
+	if _, err := r["sandbox-upload"](ctx, map[string]any{"sandbox": "pod-a", "code": code, "path": "/w/copy.txt"}, "call-2", "s", "ten"); err != nil {
 		t.Fatalf("upload: %v", err)
 	}
 	if string(fw.files["/w/copy.txt"]) != "hello-bytes" {

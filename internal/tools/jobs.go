@@ -63,7 +63,7 @@ func renderOutput(ctx context.Context, cl sandbox.WorkerClient, jobID string, st
 
 // ---- handlers --------------------------------------------------------------
 
-func (t *toolset) info(ctx context.Context, args map[string]any, session, tenant string) (extension.ToolResultData, error) {
+func (t *toolset) info(ctx context.Context, args map[string]any, callID, session, tenant string) (extension.ToolResultData, error) {
 	s, err := t.resolve(args, session, tenant)
 	if err != nil {
 		return extension.ToolResultData{}, err
@@ -81,7 +81,7 @@ func (t *toolset) info(ctx context.Context, args map[string]any, session, tenant
 	}, nil
 }
 
-func (t *toolset) exec(ctx context.Context, args map[string]any, session, tenant string) (extension.ToolResultData, error) {
+func (t *toolset) exec(ctx context.Context, args map[string]any, callID, session, tenant string) (extension.ToolResultData, error) {
 	s, err := t.resolve(args, session, tenant)
 	if err != nil {
 		return extension.ToolResultData{}, err
@@ -113,7 +113,7 @@ func (t *toolset) exec(ctx context.Context, args map[string]any, session, tenant
 	return extension.ToolResultData{Content: head + "\n" + text, Data: map[string]any{"jobId": jobID, "state": state, "exitCode": code}}, nil
 }
 
-func (t *toolset) jobStart(ctx context.Context, args map[string]any, session, tenant string) (extension.ToolResultData, error) {
+func (t *toolset) jobStart(ctx context.Context, args map[string]any, callID, session, tenant string) (extension.ToolResultData, error) {
 	s, err := t.resolve(args, session, tenant)
 	if err != nil {
 		return extension.ToolResultData{}, err
@@ -128,13 +128,39 @@ func (t *toolset) jobStart(ctx context.Context, args map[string]any, session, te
 	if err != nil {
 		return extension.ToolResultData{}, &extension.TypedError{Code: easybus.ToolResultErrorCodeRetryable, Message: fmt.Sprintf("execute: %v", err)}
 	}
+	// Relay the job's output to the UI as it arrives.
+	//
+	// This is what makes "start a long command and watch it" work: the tool
+	// returns immediately (that is its contract), and the output is streamed on
+	// the side channel until the job exits. The relay is best-effort — if the UI
+	// is not listening, or the worker cannot be watched, the job still runs and
+	// the final result is unaffected.
+	//
+	// Turn it off with follow=false for a fire-and-forget job whose output nobody
+	// will read live.
+	if followEnabled(args) {
+		watcher.Watch(ctx, t.deps.Cache.Worker(ep(s)), started.GetJobId())
+	}
 	return extension.ToolResultData{
 		Content: i18n.T(t.locale(session, tenant), i18n.MsgJobStarted, i18n.Params{"id": started.GetJobId()}),
 		Data:    map[string]any{"jobId": started.GetJobId()},
 	}, nil
 }
 
-func (t *toolset) jobOutput(ctx context.Context, args map[string]any, session, tenant string) (extension.ToolResultData, error) {
+// followEnabled reads the optional `follow` argument (default true).
+//
+// Default true because the common case is "I started something and want to see
+// it"; a caller that deliberately wants silence can say so.
+func followEnabled(args map[string]any) bool {
+	v, ok := args["follow"]
+	if !ok {
+		return true
+	}
+	b, ok := v.(bool)
+	return !ok || b
+}
+
+func (t *toolset) jobOutput(ctx context.Context, args map[string]any, callID, session, tenant string) (extension.ToolResultData, error) {
 	s, err := t.resolve(args, session, tenant)
 	if err != nil {
 		return extension.ToolResultData{}, err
@@ -176,7 +202,7 @@ func (t *toolset) jobOutput(ctx context.Context, args map[string]any, session, t
 	}, nil
 }
 
-func (t *toolset) jobWait(ctx context.Context, args map[string]any, session, tenant string) (extension.ToolResultData, error) {
+func (t *toolset) jobWait(ctx context.Context, args map[string]any, callID, session, tenant string) (extension.ToolResultData, error) {
 	s, err := t.resolve(args, session, tenant)
 	if err != nil {
 		return extension.ToolResultData{}, err
@@ -202,7 +228,7 @@ func (t *toolset) jobWait(ctx context.Context, args map[string]any, session, ten
 	return extension.ToolResultData{Content: head + "\n" + text, Data: map[string]any{"jobId": jobID, "state": state, "exitCode": code}}, nil
 }
 
-func (t *toolset) jobKill(ctx context.Context, args map[string]any, session, tenant string) (extension.ToolResultData, error) {
+func (t *toolset) jobKill(ctx context.Context, args map[string]any, callID, session, tenant string) (extension.ToolResultData, error) {
 	s, err := t.resolve(args, session, tenant)
 	if err != nil {
 		return extension.ToolResultData{}, err
@@ -217,7 +243,7 @@ func (t *toolset) jobKill(ctx context.Context, args map[string]any, session, ten
 	return extension.ToolResultData{Content: fmt.Sprintf("killed %s", jobID)}, nil
 }
 
-func (t *toolset) jobList(ctx context.Context, args map[string]any, session, tenant string) (extension.ToolResultData, error) {
+func (t *toolset) jobList(ctx context.Context, args map[string]any, callID, session, tenant string) (extension.ToolResultData, error) {
 	s, err := t.resolve(args, session, tenant)
 	if err != nil {
 		return extension.ToolResultData{}, err

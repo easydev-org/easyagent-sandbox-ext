@@ -13,7 +13,7 @@ import (
 
 // download pulls a sandbox file's bytes and persists them through the AGENT
 // (the extension has no store of its own), returning a `file:<code>`.
-func (t *toolset) download(ctx context.Context, args map[string]any, session, tenant string) (extension.ToolResultData, error) {
+func (t *toolset) download(ctx context.Context, args map[string]any, callID, session, tenant string) (extension.ToolResultData, error) {
 	s, err := t.resolve(args, session, tenant)
 	if err != nil {
 		return extension.ToolResultData{}, err
@@ -41,7 +41,7 @@ func (t *toolset) download(ctx context.Context, args map[string]any, session, te
 
 // upload fetches a `file:<code>` from the agent and writes its bytes into a
 // sandbox path.
-func (t *toolset) upload(ctx context.Context, args map[string]any, session, tenant string) (extension.ToolResultData, error) {
+func (t *toolset) upload(ctx context.Context, args map[string]any, callID, session, tenant string) (extension.ToolResultData, error) {
 	s, err := t.resolve(args, session, tenant)
 	if err != nil {
 		return extension.ToolResultData{}, err
