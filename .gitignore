@@ -1,3 +1,6 @@
 /sandbox-ext
 /dist
 *.log
+# The progress probe is a local verification tool; its built binary must not be
+# committed (the source under cmd/probeprogress is).
+/probeprogress
