@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -28,7 +29,12 @@ func WithProgress(ctx context.Context, fn ProgressFunc) context.Context {
 func EmitProgress(ctx context.Context, p *easybus.ToolProgress) {
 	if fn, ok := ctx.Value(progressKey{}).(ProgressFunc); ok && fn != nil {
 		fn(ctx, p)
+		return
 	}
+	// A frame with nowhere to go was dropped silently, which is indistinguishable
+	// from "the extension never reported anything" — the worst kind of silence when
+	// a user is waiting for output. Say it once.
+	slog.Warn("tool progress dropped: no sink on context")
 }
 
 // ProgressReporter batches output lines into throttled progress events.
