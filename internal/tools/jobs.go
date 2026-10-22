@@ -128,16 +128,36 @@ func (t *toolset) jobStart(ctx context.Context, args map[string]any, callID, ses
 		// failure — the command is running and its output keeps streaming.
 		text, _ := renderOutput(ctx, cl, jobID, 0, 200, "all")
 		return extension.ToolResultData{
-			Content: i18n.T(t.locale(session, tenant), i18n.MsgJobStill, i18n.Params{"id": jobID, "timeout": fmt.Sprintf("%d", timeoutS)}) + "\n" + text,
+			// The status goes LAST, after the output.
+			//
+			// Output is what the caller asked for and what keeps growing as the job
+			// runs; a status line pinned to the top would be pushed further away with
+			// every new line, so the reader would have to scroll up past the answer to
+			// find out whether it had finished. Trailing status reads like a shell
+			// prompt after its output.
+			Content: strings.TrimRight(text, "\n") + "\n" + jobStatusLine(t, session, tenant, jobID, state, code, timeoutS),
 			Data:    map[string]any{"jobId": jobID, "state": state, "timeoutSec": timeoutS},
 		}, nil
 	}
 	text, _ := renderOutput(ctx, cl, jobID, 0, 0, "all")
-	head := i18n.T(t.locale(session, tenant), i18n.MsgJobDone, i18n.Params{"id": jobID, "state": state, "code": fmt.Sprintf("%d", code)})
 	return extension.ToolResultData{
-		Content: head + "\n" + text,
+		Content: strings.TrimRight(text, "\n") + "\n" + jobStatusLine(t, session, tenant, jobID, state, code, timeoutS),
 		Data:    map[string]any{"jobId": jobID, "state": state, "exitCode": code},
 	}, nil
+}
+
+// jobStatusLine renders the trailing status for a finished-or-still-running job.
+//
+// One place so the three outcomes read consistently: the output, then how it
+// ended. Keeping it out of the head of the text means the same line always sits
+// where a reader looks after finishing the output.
+func jobStatusLine(t *toolset, session, tenant, jobID, state string, code int32, timeoutS int) string {
+	if state == "running" {
+		return i18n.T(t.locale(session, tenant), i18n.MsgJobStill,
+			i18n.Params{"id": jobID, "timeout": fmt.Sprintf("%d", timeoutS)})
+	}
+	return i18n.T(t.locale(session, tenant), i18n.MsgJobDone,
+		i18n.Params{"id": jobID, "state": state, "code": fmt.Sprintf("%d", code)})
 }
 
 const (
