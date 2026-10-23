@@ -100,21 +100,28 @@ func (r *ProgressReporter) Flush(ctx context.Context) {
 }
 
 func (r *ProgressReporter) emit(ctx context.Context, lines []string) {
-	dropped := 0
-	if len(lines) > r.maxLinesPerEvent {
-		dropped = len(lines) - r.maxLinesPerEvent
-		lines = lines[:r.maxLinesPerEvent]
+	// SPLIT rather than truncate.
+	//
+	// `maxLinesPerEvent` used to CAP a batch and append "… N more line(s)", which was
+	// fine when every frame carried the whole output: the cut only affected one frame's
+	// preview. Live frames are DELTAS now — the agent appends them — so a dropped line
+	// is gone for good, and a job that printed faster than the reporter polls lost its
+	// middle while the console showed a promise ("N more lines") it could never deliver.
+	//
+	// The per-event bound still exists, because a single enormous event is worth
+	// avoiding; it is enforced by sending several events instead of discarding the
+	// excess. Sizing the result is the agent's job, and it already trims to a fixed
+	// number of lines.
+	for start := 0; start < len(lines); start += r.maxLinesPerEvent {
+		end := start + r.maxLinesPerEvent
+		if end > len(lines) {
+			end = len(lines)
+		}
+		EmitProgress(ctx, &easybus.ToolProgress{
+			Phase: easybusString("running"),
+			Text:  easybusString(strings.Join(lines[start:end], "\n")),
+		})
 	}
-	text := strings.Join(lines, "\n")
-	if dropped > 0 {
-		// Say so instead of silently truncating: a UI that shows a gap without
-		// explanation looks like the command hung.
-		text += "\n… " + itoa(dropped) + " more line(s) in this batch"
-	}
-	EmitProgress(ctx, &easybus.ToolProgress{
-		Phase: easybusString("running"),
-		Text:  easybusString(text),
-	})
 }
 
 func easybusString(s string) *string { return &s }
