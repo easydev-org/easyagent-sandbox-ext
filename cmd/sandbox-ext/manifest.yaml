@@ -732,10 +732,18 @@ tools:
 # meaning lives entirely in this extension.
 permissions:
   - key: exec
-    label: Run commands in a sandbox
+    # The label names the consequence, not the mechanism: "run commands" reads routine, while
+    # what it grants is control of everything inside that sandbox.
+    label: Run commands (full control of the sandbox)
     descriptions:
-      zh: 在沙箱中执行命令
-    risk: write
+      zh: 在沙箱中执行命令（等同于该沙箱的完全控制权）
+    # destructive, and the BROADEST grant this extension offers.
+    #
+    # It was labelled `write`, which understated it: a session that can run a command can also
+    # rewrite any file (`echo x > /w/f`), read credentials out of the environment, and reach
+    # the network from inside the sandbox. That makes it a superset of file.write, so marking
+    # file.write as the more dangerous of the two was backwards.
+    risk: destructive
     params:
       - name: sandbox
         type: string
@@ -749,7 +757,13 @@ permissions:
     label: Write, move or delete files in a sandbox
     descriptions:
       zh: 在沙箱中写入、移动或删除文件
-    risk: destructive
+    # write, not destructive: it is a NARROWER grant than exec, and labelling it higher made
+    # the two read backwards. Its value is the case it enables — a session that may change
+    # files but must not run code.
+    #
+    # Note that exec COVERS this: a command can write a file. file.write is the finer control
+    # for a session not trusted with a shell, not a boundary against one.
+    risk: write
     params:
       - name: sandbox
         type: string
