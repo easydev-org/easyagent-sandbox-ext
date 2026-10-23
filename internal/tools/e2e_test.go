@@ -12,6 +12,8 @@ import (
 	workerv1 "github.com/easydev-org/easyagent-sandbox-ext/gen/worker/v1"
 	"github.com/easydev-org/easyagent-sandbox-ext/gen/worker/v1/workerv1connect"
 	"github.com/easydev-org/easyagent-sandbox-ext/internal/sandbox"
+	easybus "github.com/easydev-org/easybus-sdk"
+	"github.com/easydev-org/easybus-sdk/extension"
 )
 
 // fakeWorker is a minimal in-process WorkerService that records the last
@@ -66,10 +68,29 @@ func newRegistry(t *testing.T, url string) map[string]Handler {
 	})
 }
 
+// withGrants puts the authorisations an agent would send onto the context.
+//
+// The write tools are permission-gated, so a test that calls them without grants is testing
+// the refusal path, not the behaviour it means to exercise. Named explicitly rather than
+// granting "*" so a test that forgets to state what it needs fails loudly.
+func withGrants(ctx context.Context, keys ...string) context.Context {
+	grants := make([]*easybus.Grant, 0, len(keys))
+	for _, k := range keys {
+		grants = append(grants, &easybus.Grant{
+			Key: k,
+			// pod-a is the sandbox the fixtures configure.
+			Params: easybus.Struct(map[string]any{"sandbox": "pod-a"}),
+		})
+	}
+	return extension.WithGrants(ctx, grants)
+}
+
 func TestExecRunsOnSandbox(t *testing.T) {
 	f, url := newFakeServer(t)
 	reg := newRegistry(t, url)
-	res, err := reg["sandbox-job-start"](context.Background(), map[string]any{"command": "echo hi"}, "", "s", "ten")
+	// Executing a command needs `exec`: the tool refuses without it, which is the point.
+	ctx := withGrants(context.Background(), PermExec)
+	res, err := reg["sandbox-job-start"](ctx, map[string]any{"command": "echo hi"}, "", "s", "ten")
 	if err != nil {
 		t.Fatal(err)
 	}

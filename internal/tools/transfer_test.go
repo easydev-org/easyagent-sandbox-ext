@@ -45,7 +45,8 @@ func fakeAgent(t *testing.T, url string) *nats.Bus {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := context.Background()
+	// Both directions touch files in the sandbox; download only READS, but upload writes.
+	ctx := withGrants(context.Background(), PermFileWrite)
 	ing, _ := b.Subscribe(ctx, protocol.FileIngestWildcard, bus.SubscribeOpts{})
 	go func() {
 		for {
@@ -127,7 +128,7 @@ func TestDownloadUploadRoundTrip(t *testing.T) {
 		},
 	})
 
-	ctx := context.Background()
+	ctx := withGrants(context.Background(), PermFileWrite)
 	// download: sandbox file -> agent file:<code>
 	res, err := r["sandbox-download"](ctx, map[string]any{"sandbox": "pod-a", "path": "/w/hello.txt"}, "call-1", "s", "ten")
 	if err != nil {

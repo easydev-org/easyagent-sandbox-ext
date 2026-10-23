@@ -46,6 +46,12 @@ func (t *toolset) upload(ctx context.Context, args map[string]any, callID, sessi
 	if err != nil {
 		return extension.ToolResultData{}, err
 	}
+	// Upload WRITES a file into the sandbox, so it needs the same permission as file-write.
+	// Gating only the tools whose name says "write" would leave this one as a way to put
+	// arbitrary bytes into a sandbox the session was never granted.
+	if err := extension.Require(ctx, PermFileWrite, map[string]string{"sandbox": s.Name}); err != nil {
+		return extension.ToolResultData{}, err
+	}
 	code := argStr(args, "code")
 	p := argStr(args, "path")
 	if code == "" || p == "" {

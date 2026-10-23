@@ -98,6 +98,14 @@ func (t *toolset) jobStart(ctx context.Context, args map[string]any, callID, ses
 	if err != nil {
 		return extension.ToolResultData{}, err
 	}
+	// Permission gate, before anything is executed.
+	//
+	// Checked HERE rather than trusted from the agent: this process holds the worker
+	// credential, so it is the only place that can stop a command from running. The agent's
+	// check is an earlier refusal with a friendlier message.
+	if err := extension.Require(ctx, PermExec, map[string]string{"sandbox": s.Name}); err != nil {
+		return extension.ToolResultData{}, err
+	}
 	command := argStr(args, "command")
 	if command == "" {
 		return extension.ToolResultData{}, &extension.TypedError{Code: easybus.ToolResultErrorCodeInvalidArgument, Message: "command is required"}
@@ -253,6 +261,9 @@ func (t *toolset) jobWait(ctx context.Context, args map[string]any, callID, sess
 func (t *toolset) jobKill(ctx context.Context, args map[string]any, callID, session, tenant string) (extension.ToolResultData, error) {
 	s, err := t.resolve(args, session, tenant)
 	if err != nil {
+		return extension.ToolResultData{}, err
+	}
+	if err := extension.Require(ctx, PermExec, map[string]string{"sandbox": s.Name}); err != nil {
 		return extension.ToolResultData{}, err
 	}
 	jobID := argStr(args, "job-id")

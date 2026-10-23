@@ -50,6 +50,8 @@ github.com/easydev-org/easybus-sdk v0.5.8 h1:LOBflI+HNwqHJ71vIyQLb2v16EsP4WiTfJU
 github.com/easydev-org/easybus-sdk v0.5.8/go.mod h1:0Jx5Nxc922MVvolEg/SS5coPLO1s/H6JdLz5GQGyrio=
 github.com/easydev-org/easybus-sdk v0.5.9 h1:nF8p13GLe6PDw9C9+5JgG827g0n1pX+Mho3hzgV7iQg=
 github.com/easydev-org/easybus-sdk v0.5.9/go.mod h1:0Jx5Nxc922MVvolEg/SS5coPLO1s/H6JdLz5GQGyrio=
+github.com/easydev-org/easybus-sdk v0.8.4 h1:AbwEtGxYIEFav1QuM9ocTVSyRE8OKr3t/jkU+Jf1WQo=
+github.com/easydev-org/easybus-sdk v0.8.4/go.mod h1:0Jx5Nxc922MVvolEg/SS5coPLO1s/H6JdLz5GQGyrio=
 github.com/google/go-cmp v0.7.0 h1:wk8382ETsv4JYUZwIsn6YpYiWiBsYLSJiTsyBybVuN8=
 github.com/google/go-cmp v0.7.0/go.mod h1:pXiqmnSA92OHEEa9HXL2W4E7lf9JzCmGVUdgjX3N/iU=
 github.com/klauspost/compress v1.18.5 h1:/h1gH5Ce+VWNLSWqPzOVn6XBO+vJbCNGvjoaGBFW2IE=

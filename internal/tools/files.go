@@ -81,6 +81,9 @@ func (t *toolset) fileWrite(ctx context.Context, args map[string]any, callID, se
 	if err != nil {
 		return extension.ToolResultData{}, err
 	}
+	if err := extension.Require(ctx, PermFileWrite, map[string]string{"sandbox": s.Name}); err != nil {
+		return extension.ToolResultData{}, err
+	}
 	path := argStr(args, "path")
 	content := argStr(args, "content")
 	if path == "" {
@@ -122,6 +125,9 @@ func (t *toolset) fileDelete(ctx context.Context, args map[string]any, callID, s
 	if err != nil {
 		return extension.ToolResultData{}, err
 	}
+	if err := extension.Require(ctx, PermFileWrite, map[string]string{"sandbox": s.Name}); err != nil {
+		return extension.ToolResultData{}, err
+	}
 	path := argStr(args, "path")
 	if _, err := t.deps.Cache.Worker(ep(s)).FileDelete(ctx, &workerv1.FileDeleteRequest{Path: path}); err != nil {
 		return extension.ToolResultData{}, &extension.TypedError{Code: easybus.ToolResultErrorCodeRetryable, Message: fmt.Sprintf("file-delete: %v", err)}
@@ -132,6 +138,9 @@ func (t *toolset) fileDelete(ctx context.Context, args map[string]any, callID, s
 func (t *toolset) fileMove(ctx context.Context, args map[string]any, callID, session, tenant string) (extension.ToolResultData, error) {
 	s, err := t.resolve(args, session, tenant)
 	if err != nil {
+		return extension.ToolResultData{}, err
+	}
+	if err := extension.Require(ctx, PermFileWrite, map[string]string{"sandbox": s.Name}); err != nil {
 		return extension.ToolResultData{}, err
 	}
 	from, to := argStr(args, "from"), argStr(args, "to")
