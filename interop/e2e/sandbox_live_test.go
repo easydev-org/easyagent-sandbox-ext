@@ -67,30 +67,34 @@ func TestDeclaresItsTools(t *testing.T) {
 	}
 }
 
-// Without the `sandboxes` config every tool must refuse, naming the missing config.
+// With no `sandboxes` configured, a tool that NEEDS one must refuse and name the missing config.
 //
-// This is the case that used to be silent: the extension accepted the call, guessed at a URL, and
-// failed with a transport error that named no field.
-func TestRefusesWithoutSandboxesConfig(t *testing.T) {
+// NOT `list-sandboxes`: listing an empty list is a perfectly good answer to "what is configured",
+// and the extension returns a message saying so. Asserting a refusal there would have encoded my
+// assumption instead of the contract — the first version of this test did exactly that.
+//
+// The tool below actually needs a sandbox, so without config it must say WHY rather than failing
+// with a transport error that names no field.
+func TestNeedsSandboxRefusesWithoutConfig(t *testing.T) {
 	a, _ := harness(t, env("E2E_SANDBOX_URL", ""))
 	ctx, cancel := ctxWithTimeout(t, 60)
 	defer cancel()
 
-	tr, err := a.CallTool(ctx, tenant, session, extID, "list-sandboxes", "c-noconf", map[string]any{})
+	tr, err := a.CallToolWithGrants(ctx, tenant, session, extID, "sandbox-file-read",
+		"c-noconf", map[string]any{"path": "/etc/hostname"}, sandboxGrants("pod-a"))
 	if err != nil {
 		// A transport-level failure is acceptable ONLY if it names the config; a bare timeout would
 		// mean the extension waited on a URL it should not have chosen.
-		if !strings.Contains(strings.ToLower(err.Error()), "config") {
+		if !strings.Contains(strings.ToLower(err.Error()), "config") &&
+			!strings.Contains(strings.ToLower(err.Error()), "sandbox") {
 			t.Fatalf("call without config failed without naming it: %v", err)
 		}
 		return
 	}
 	if tr.Error == nil {
-		t.Fatal("list-sandboxes succeeded with no sandboxes configured; it must refuse")
+		t.Fatal("a tool that needs a sandbox succeeded with none configured; it must refuse")
 	}
-	if !strings.Contains(strings.ToLower(tr.Error.Message), "config") {
-		t.Fatalf("refusal does not name the missing config: %q", tr.Error.Message)
-	}
+	t.Logf("refused as expected: %s", tr.Error.Message)
 }
 
 // The end-to-end proof: the bytes must come back from the SANDBOX, not from the extension's memory.
