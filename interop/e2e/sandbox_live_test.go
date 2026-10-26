@@ -109,7 +109,10 @@ func TestWritesAndReadsAFileInTheSandbox(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	callTool(t, a, "sandbox-file-write", map[string]any{"path": path, "content": body})
+	// file.write for the write, and nothing for the read: the read tool declares no `requires`, and
+	// passing a grant it does not need would hide a manifest that stopped gating the write.
+	callToolGrants(t, a, "sandbox-file-write",
+		map[string]any{"path": path, "content": body}, sandboxGrants("pod-a"))
 
 	got := callTool(t, a, "sandbox-file-read", map[string]any{"path": path})
 	if !strings.Contains(got, body) {

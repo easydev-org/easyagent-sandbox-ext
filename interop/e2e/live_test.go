@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	easybus "github.com/easydev-org/easybus-sdk"
 	"github.com/easydev-org/easybus-sdk/agent"
 	"github.com/easydev-org/easybus-sdk/extension"
 	"github.com/easydev-org/easybus-sdk/manifest"
@@ -97,6 +98,11 @@ func harness(t *testing.T, sandboxURL string) (*agent.Agent, *extension.Extensio
 	go func() { _ = ext.Serve(ctx) }()
 	t.Cleanup(func() { _ = ext.Close() })
 
+	// Serve registers subscriptions ASYNCHRONOUSLY. Calling a tool before it finishes gives
+	// "no responders", which the extension cannot distinguish from "the tool does not exist" —
+	// the same ambiguity this suite exists to remove. Wait until discovery answers.
+	waitRegistered(t, natsURL)
+
 	agBus, err := nats.Connect(natsURL)
 	if err != nil {
 		t.Fatalf("connect agent: %v", err)
@@ -131,10 +137,20 @@ func configure(t *testing.T, a *agent.Agent, sandboxURL string) {
 
 // callTool calls a tool and returns content, failing on a tool error.
 func callTool(t *testing.T, a *agent.Agent, tool string, args map[string]any) string {
+	return callToolGrants(t, a, tool, args, nil)
+}
+
+// callToolGrants calls a tool with authorisations.
+//
+// Several tools here declare `requires`, so a call without grants is refused with
+// "permission denied: file.write (no grant held)" before the sandbox is contacted. That is the
+// extension enforcing its manifest; the test carries what an operator would issue.
+func callToolGrants(t *testing.T, a *agent.Agent, tool string, args map[string]any, grants []*easybus.Grant) string {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
-	tr, err := a.CallTool(ctx, tenant, session, extID, tool, fmt.Sprintf("c-%s-%d", tool, time.Now().UnixNano()), args)
+	tr, err := a.CallToolWithGrants(ctx, tenant, session, extID, tool,
+		fmt.Sprintf("c-%s-%d", tool, time.Now().UnixNano()), args, grants)
 	if err != nil {
 		t.Fatalf("%s: %v", tool, err)
 	}
@@ -144,9 +160,53 @@ func callTool(t *testing.T, a *agent.Agent, tool string, args map[string]any) st
 	return tr.Content
 }
 
+// sandboxGrants issues every permission this extension declares, scoped to the sandbox under test.
+func sandboxGrants(name string) []*easybus.Grant {
+	out := make([]*easybus.Grant, 0, 3)
+	for _, key := range []string{"exec", "file.write", "browser.read"} {
+		out = append(out, &easybus.Grant{Key: key, Params: easybus.Struct(map[string]any{"sandbox": name})})
+	}
+	return out
+}
+
 func ctxWithTimeout(t *testing.T, seconds int) (context.Context, context.CancelFunc) {
 	t.Helper()
 	return context.WithTimeout(context.Background(), time.Duration(seconds)*time.Second)
+}
+
+// waitRegistered blocks until the extension answers discovery.
+//
+// Serve installs its subscriptions asynchronously, so a call issued immediately after it returns
+// gets "no responders" — indistinguishable, from the caller's side, from "this extension has no
+// such tool". Every test in this package would then fail for a reason unrelated to what it checks.
+func waitRegistered(t *testing.T, natsURL string) {
+	t.Helper()
+	probe, err := nats.Connect(natsURL)
+	if err != nil {
+		t.Fatalf("connect probe: %v", err)
+	}
+	defer func() { _ = probe.Close() }()
+	ag := agent.New(probe)
+
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		ctx, cancel := contextWithTimeout(3 * time.Second)
+		found, derr := ag.Discover(ctx, 1500)
+		cancel()
+		if derr == nil {
+			for _, m := range found {
+				if m.Id == extID {
+					return
+				}
+			}
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	t.Fatalf("%s never answered discovery", extID)
+}
+
+func contextWithTimeout(d time.Duration) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), d)
 }
 
 func contains(xs []string, want string) bool {
