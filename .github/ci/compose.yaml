@@ -1,0 +1,49 @@
+# Services for the sandbox-ext end-to-end test.
+#
+# The AGENT IS NOT PART OF THIS. A tool call is a request on
+# `easybus.<tenant>.tool.call.<extId>.<tool>`, so the test plays the agent's part with the SDK's
+# own client — which is the only reason this test needs no agent.
+#
+# What is here:
+#   nats     — transport + config KV (the `sandboxes` list this extension refuses to run without)
+#   sandbox  — a REAL easyworker in a REAL desktop. Published from easysandbox's own release
+#              workflow, so this is the same image a deployment gets, not a stand-in.
+#
+# "Pre-started, never created": the extension's tools run commands and touch files in a sandbox that
+# already exists. Only `sandbox-job-*` would start one, and those are not what this test drives — so
+# one long-lived container is all that is needed, and no Docker-in-Docker.
+services:
+  nats:
+    image: nats:2.10-alpine
+    container_name: ci-nats
+    ports:
+      - "4222:4222"
+    command: ["-js", "-m", "8222"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:8222/healthz || exit 1"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 3s
+
+  sandbox:
+    # The labwc (Wayland, wlroots) desktop flavour. `main` rather than `latest`: both exist, but
+    # `main` is what the release workflow publishes on every merge, so a stale `latest` cannot make
+    # this test pass against code that no longer ships.
+    image: ghcr.io/easydev-org/sandbox-wayland:main
+    container_name: ci-sandbox
+    # PUBLISHED: the extension runs on the RUNNER (the test launches it in-process), so it reaches
+    # the worker on the host port. `expose` would work only if the extension were a compose service.
+    ports:
+      - "48080:48080"
+    # The desktop needs shared memory; the default 64MB makes a compositor die in ways that look
+    # like an extension bug.
+    shm_size: 2gb
+    healthcheck:
+      # Ask the WORKER, not the port: easyworker answers on /api/v1/health only once its database
+      # and the desktop are ready. A port check would pass while `sandbox-info` still fails.
+      test: ["CMD-SHELL", "python3 -c \"import sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:48080/api/v1/health', timeout=4).status==200 else 1)\" 2>/dev/null || wget -q -O- http://127.0.0.1:48080/api/v1/health"]
+      interval: 5s
+      timeout: 6s
+      retries: 40
+      start_period: 20s
