@@ -39,10 +39,25 @@ services:
     # The desktop needs shared memory; the default 64MB makes a compositor die in ways that look
     # like an extension bug.
     shm_size: 2gb
+    environment:
+      # A worker with no token starts UNCLAIMED and prints an enrollment code instead of accepting
+      # calls — the log said so plainly ("easyworker UNCLAIMED — enrollment code: …") while the
+      # extension was configured to talk to it. Setting the token at boot claims it, which is what
+      # a deployment does; the test passes the same value in its `sandboxes` config.
+      WORKER_TOKEN: "ci-token"
     healthcheck:
-      # Ask the WORKER, not the port: easyworker answers on /api/v1/health only once its database
-      # and the desktop are ready. A port check would pass while `sandbox-info` still fails.
-      test: ["CMD-SHELL", "python3 -c \"import sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:48080/api/v1/health', timeout=4).status==200 else 1)\" 2>/dev/null || wget -q -O- http://127.0.0.1:48080/api/v1/health"]
+      # Ask the WORKER, not the port: a port check would pass while `sandbox-info` still fails.
+      #
+      # Neither wget nor curl is in this image — the first attempt used wget and spent 40 probes
+      # reporting "/bin/sh: 1: wget: not found" while the log plainly showed
+      # "easyworker listening on 0.0.0.0:48080". A healthcheck whose COMMAND is missing reads as
+      # unhealthy, which is the most misleading failure available here.
+      #
+      # /dev/tcp is bash-only, and debian's /bin/sh is dash, so the probe goes through bash -c.
+      test:
+        - CMD-SHELL
+        - >-
+          bash -c 'exec 3<>/dev/tcp/127.0.0.1/48080 && printf "GET /api/v1/health HTTP/1.0\r\n\r\n" >&3 && grep -q "200" <&3'
       interval: 5s
       timeout: 6s
       retries: 40

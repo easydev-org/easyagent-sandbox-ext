@@ -114,7 +114,9 @@ func harness(t *testing.T, sandboxURL string) (*agent.Agent, *extension.Extensio
 func configure(t *testing.T, a *agent.Agent, sandboxURL string) {
 	t.Helper()
 	raw, err := json.Marshal([]map[string]string{
-		{"name": "pod-a", "url": sandboxURL, "token": ""},
+		// The token MUST match the one the worker was started with. Without it the worker answers
+		// 401, which the extension reports as a transport failure naming nothing.
+		{"name": "pod-a", "url": sandboxURL, "token": env("E2E_SANDBOX_TOKEN", "ci-token")},
 	})
 	if err != nil {
 		t.Fatalf("marshal config: %v", err)
