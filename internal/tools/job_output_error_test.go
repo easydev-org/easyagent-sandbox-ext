@@ -15,6 +15,19 @@ import (
 	"github.com/easydev-org/easyagent-sandbox-ext/gen/worker/v1/workerv1connect"
 )
 
+// dataOf reads the result's Data as a map.
+//
+// `ToolResultData.Data` is `any` — the wire type is deliberately open — so a test has to say what it
+// expects instead of indexing an interface.
+func dataOf(t *testing.T, d any) map[string]any {
+	t.Helper()
+	m, ok := d.(map[string]any)
+	if !ok {
+		t.Fatalf("result Data is %T, want map[string]any", d)
+	}
+	return m
+}
+
 // newFakeServerWith serves an arbitrary worker handler.
 //
 // The existing newFakeServer hard-codes the healthy fake; these tests need one whose OUTPUT read
@@ -57,14 +70,14 @@ func TestJobWaitReportsOutputReadFailure(t *testing.T) {
 	if !strings.Contains(got.Content, "job-1") {
 		t.Fatalf("result does not name the job: %q", got.Content)
 	}
-	if got.Data["state"] == nil {
+	if dataOf(t, got.Data)["state"] == nil {
 		t.Fatalf("result carries no state: %+v", got.Data)
 	}
 	if !strings.Contains(strings.ToLower(got.Content), "output unavailable") {
 		t.Fatalf("result does not report that the output could not be read: %q\n"+
 			"an empty body beside a 'done' line reads as 'the command printed nothing'", got.Content)
 	}
-	if got.Data["outputError"] == nil {
+	if dataOf(t, got.Data)["outputError"] == nil {
 		t.Fatalf("result carries no outputError for a caller to branch on: %+v", got.Data)
 	}
 }
@@ -85,7 +98,7 @@ func TestJobWaitSilentJobIsNotAnError(t *testing.T) {
 	if strings.Contains(strings.ToLower(got.Content), "output unavailable") {
 		t.Fatalf("a job that printed nothing was reported as a read failure: %q", got.Content)
 	}
-	if got.Data["outputError"] != nil {
+	if dataOf(t, got.Data)["outputError"] != nil {
 		t.Fatalf("a silent job carries an outputError: %+v", got.Data)
 	}
 }
