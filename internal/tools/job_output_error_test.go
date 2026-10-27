@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -115,7 +114,8 @@ func (f *outputFailingWorker) JobWait(context.Context, *workerv1.JobWaitRequest)
 	return &workerv1.JobWaitResponse{State: "done", ExitCode: 0}, nil
 }
 func (f *outputFailingWorker) JobOutput(context.Context, *workerv1.JobOutputRequest) (*workerv1.JobOutputResponse, error) {
-	return nil, connect.NewError(connect.CodeUnavailable, errors.New("worker went away"))
+	// v2 takes a STRING message, not an error (see transfer_test.go): `connect.NewError(code, string)`.
+	return nil, connect.NewError(connect.CodeUnavailable, "worker went away")
 }
 func (f *outputFailingWorker) JobGraph(context.Context, *workerv1.JobGraphRequest) (*workerv1.JobGraphResponse, error) {
 	return &workerv1.JobGraphResponse{}, nil
