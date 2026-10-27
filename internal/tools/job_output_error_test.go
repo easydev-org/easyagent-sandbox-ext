@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
 
 	workerv1 "github.com/easydev-org/easyagent-sandbox-ext/gen/worker/v1"
