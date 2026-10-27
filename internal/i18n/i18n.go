@@ -13,6 +13,7 @@ const (
 	MsgJobStarted             = "jobStarted"
 	MsgJobStill               = "jobStillRunning"
 	MsgJobDone                = "jobDone"
+	MsgJobOutputUnavailable   = "jobOutputUnavailable"
 	MsgNoSandboxes            = "noSandboxes"
 	MsgUploaded               = "uploaded"
 	MsgDownloaded             = "downloaded"
@@ -56,6 +57,12 @@ var Catalog = easybusi18n.Catalog{
 	MsgJobDone: {
 		"en": "job {id} {state} (exit {code})",
 		"zh": "任务 {id} {state}（退出码 {code}）",
+	},
+	// Says the OUTPUT could not be read, which is not the same as "there was none". Without it a
+	// reader sees a state line and an empty body, and concludes the command printed nothing.
+	MsgJobOutputUnavailable: {
+		"en": "(output unavailable: {err} — the job's state above is still accurate)",
+		"zh": "（无法读取输出：{err} —— 上面的任务状态仍然有效）",
 	},
 	MsgJobGraphHead: {
 		"en": "=== dataflow of job {id}: {n} stream(s), {e} edge(s) ===",

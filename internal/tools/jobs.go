@@ -43,10 +43,16 @@ func waitForJob(ctx context.Context, cl sandbox.WorkerClient, jobID string, budg
 }
 
 // renderOutput fetches a line window and caps it.
-func renderOutput(ctx context.Context, cl sandbox.WorkerClient, jobID string, start, end int32, stream string) (string, int32) {
+//
+// Returns an ERROR when the worker could not be asked, because "the job produced no output" and
+// "we could not read its output" are different facts and the caller cannot tell them apart from an
+// empty string. This used to swallow the error and return "": a job-wait against an unreachable
+// worker then reported a finished job with no output, which reads as a successful run of a silent
+// command — the most expensive kind of wrong answer, because it looks like a result.
+func renderOutput(ctx context.Context, cl sandbox.WorkerClient, jobID string, start, end int32, stream string) (string, int32, error) {
 	res, err := cl.JobOutput(ctx, &workerv1.JobOutputRequest{JobId: jobID, Start: start, End: end, Stream: stream})
 	if err != nil {
-		return "", 0
+		return "", 0, err
 	}
 	lines := res.GetLines()
 	truncated := false
@@ -58,7 +64,7 @@ func renderOutput(ctx context.Context, cl sandbox.WorkerClient, jobID string, st
 	if truncated {
 		text += fmt.Sprintf("\n... (truncated at %d of %d lines)", maxOutputLines, res.GetTotalLines())
 	}
-	return text, res.GetTotalLines()
+	return text, res.GetTotalLines(), nil
 }
 
 // ---- handlers --------------------------------------------------------------
@@ -134,7 +140,14 @@ func (t *toolset) jobStart(ctx context.Context, args map[string]any, callID, ses
 	if state == "running" {
 		// Still going: hand back the id and whatever it has produced. This is NOT a
 		// failure — the command is running and its output keeps streaming.
-		text, _ := renderOutput(ctx, cl, jobID, 0, 200, "all")
+		//
+		// A failed read IS reported: the job state is still conveyed (the Data fields
+		// below carry it), but the text says the output could not be fetched rather than
+		// showing an empty body that reads as "this command printed nothing".
+		text, _, rerr := renderOutput(ctx, cl, jobID, 0, 200, "all")
+		if rerr != nil {
+			text = outputUnavailableNote(t, session, tenant, rerr)
+		}
 		return extension.ToolResultData{
 			// The status goes LAST, after the output.
 			//
@@ -147,11 +160,25 @@ func (t *toolset) jobStart(ctx context.Context, args map[string]any, callID, ses
 			Data:    map[string]any{"jobId": jobID, "state": state, "timeoutSec": timeoutS},
 		}, nil
 	}
-	text, _ := renderOutput(ctx, cl, jobID, 0, 0, "all")
+	text, _, rerr := renderOutput(ctx, cl, jobID, 0, 0, "all")
+	if rerr != nil {
+		text = outputUnavailableNote(t, session, tenant, rerr)
+	}
 	return extension.ToolResultData{
 		Content: strings.TrimRight(text, "\n") + "\n" + jobStatusLine(t, session, tenant, jobID, state, code, timeoutS),
 		Data:    map[string]any{"jobId": jobID, "state": state, "exitCode": code},
 	}, nil
+}
+
+// outputUnavailableNote renders the text shown where a job's output would be.
+//
+// The tools still answer: the job's STATE (and exit code) is known and useful, so failing the whole
+// call would throw away information the worker did give us. What must not happen is an empty body
+// beside a "done" line, because that reads as "the command printed nothing" — a wrong answer that
+// looks like a result.
+func outputUnavailableNote(t *toolset, session, tenant string, err error) string {
+	return i18n.T(t.locale(session, tenant), i18n.MsgJobOutputUnavailable,
+		i18n.Params{"err": err.Error()})
 }
 
 // jobStatusLine renders the trailing status for a finished-or-still-running job.
@@ -245,7 +272,18 @@ func (t *toolset) jobWait(ctx context.Context, args map[string]any, callID, sess
 	timeoutS := clampInt(args, "timeout", 60, 90)
 	cl := t.deps.Cache.Worker(ep(s))
 	state, code := waitForJob(ctx, cl, jobID, time.Duration(timeoutS)*time.Second)
-	text, _ := renderOutput(ctx, cl, jobID, -200, 0, "all")
+	text, _, rerr := renderOutput(ctx, cl, jobID, -200, 0, "all")
+	if rerr != nil {
+		// The job's STATE is known and useful, so the tool still answers — but it must not
+		// answer with an empty body next to "done", which is indistinguishable from a
+		// command that printed nothing. Report the read failure in its place.
+		return extension.ToolResultData{
+			Content: i18n.T(t.locale(session, tenant), i18n.MsgJobDone,
+				i18n.Params{"id": jobID, "state": state, "code": fmt.Sprintf("%d", code)}) +
+				"\n" + outputUnavailableNote(t, session, tenant, rerr),
+			Data: map[string]any{"jobId": jobID, "state": state, "exitCode": code, "outputError": rerr.Error()},
+		}, nil
+	}
 	// Same reasoning as jobOutput: stdout/stderr is only the tail of a pipeline.
 	if argBool(args, "intermediate", true) {
 		if inter := renderIntermediates(ctx, cl, jobID,

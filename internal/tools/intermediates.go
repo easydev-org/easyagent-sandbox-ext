@@ -47,7 +47,12 @@ func renderIntermediates(ctx context.Context, cl sandbox.WorkerClient, jobID str
 
 	g, err := cl.JobGraph(ctx, &workerv1.JobGraphRequest{JobId: jobID})
 	if err != nil {
-		// A graph read failing must not fail the whole tool: stdout is the answer.
+		// Best-effort, and SILENTLY so — unlike the stdout read, which reports its failure.
+		//
+		// The difference is what the reader would conclude. An empty stdout looks like "the command
+		// printed nothing", which is a wrong answer; a missing dataflow section looks like "this
+		// job had no pipes", which is at worst incomplete. The primary answer is unaffected, so
+		// spending the caller's attention on it would be worse than omitting it.
 		return ""
 	}
 
