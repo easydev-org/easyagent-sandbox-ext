@@ -49,6 +49,15 @@ func (h *handler) screen(w http.ResponseWriter, r *http.Request, name string) {
 		// listener behind the same interceptor, so the token goes along as well.
 		header.Set("Authorization", "Bearer "+sb.Token)
 	}
+	// The WORKER'S ORIGIN, not the browser's.
+	//
+	// `golang.org/x/net/websocket` — which the worker uses — rejects a handshake with no `Origin`
+	// header with a bare 403. A browser always sends one, but this proxy is the client here, so it
+	// has to send one too. Measured: without this every screen request failed with 502, because the
+	// worker refused the upgrade and the dial error surfaced as a bad gateway.
+	if u, perr := url.Parse(upstreamURL); perr == nil {
+		header.Set("Origin", "http://"+u.Host)
+	}
 
 	dialer := websocket.Dialer{
 		HandshakeTimeout: 10 * time.Second,
