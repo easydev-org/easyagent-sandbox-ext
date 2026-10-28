@@ -6,8 +6,9 @@ package main
 
 import (
 	"context"
-	_ "embed"
+	"embed"
 	"log/slog"
+	"net/http"
 	"os"
 
 	easybus "github.com/easydev-org/easybus-sdk"
@@ -17,10 +18,28 @@ import (
 
 	"github.com/easydev-org/easyagent-sandbox-ext/internal/sandbox"
 	"github.com/easydev-org/easyagent-sandbox-ext/internal/tools"
+	"github.com/easydev-org/easyagent-sandbox-ext/internal/uiapi"
+	"github.com/easydev-org/easyagent-sandbox-ext/internal/config"
 )
 
 //go:embed manifest.yaml
 var manifestYAML []byte
+
+//go:embed all:ui
+var uiFiles embed.FS
+
+// uiBase is where this extension's UI — and therefore its API — is mounted.
+const uiBase = "/ext/sandbox"
+
+// uiMux builds the panel's API surface.
+func uiMux(cache *sandbox.ClientCache, sandboxes func(session, tenant string) []config.Sandbox) http.Handler {
+	return uiapi.Handler(uiapi.Deps{
+		Sandboxes: sandboxes,
+		Cache:     cache,
+		// The agent owns the token table; an extension cannot verify a bearer on its own.
+		Tenants: &uiapi.AgentIdentity{AgentURL: envOr("AGENT_URL", "http://agent.dev.svc.cluster.local")},
+	})
+}
 
 func main() {
 	log := slog.Default().With("svc", "sandbox-ext")
@@ -92,6 +111,27 @@ func main() {
 	ext = extension.New(bus, cfg)
 
 	if err := extension.Serve(ext, extension.ServeOptions{
+		// The browser panel. The extension has never had an HTTP surface: a tool only needs the bus,
+		// but a panel needs a same-origin URL, and a browser cannot reach a worker's ClusterIP.
+		UI: &extension.UISpec{
+			Assets:      uiFiles,
+			StripPrefix: "ui",
+			Base:        uiBase,
+			APIPrefix:   "/api",
+			Title:       "Sandboxes",
+			Descriptions: map[string]string{
+				"en": "Machines the agent can drive: shell, files, jobs, and their screens.",
+				"zh": "agent 可操作的机器：命令行、文件、任务，以及实时画面。",
+			},
+			Icon: "/icon.svg",
+		},
+		Handler: uiMux(cache, func(session, tenant string) []config.Sandbox {
+			if ext == nil {
+				return nil
+			}
+			raw, _ := ext.GetConfig(tenant, config.KnobSandboxes, session).(string)
+			return config.Parse(raw)
+		}),
 		Run: func(ctx context.Context, _ *extension.Extension) {
 			log.Info("listening", "nats", natsURL)
 			// Stop relaying job output once the process is going away, so no
