@@ -1,3 +1,5 @@
+import { createScreen } from './screen.js'
+
 // The sandbox panel.
 //
 // Three rails: machines, their jobs, and one job's output. The output is a real Server-Sent Events
@@ -61,6 +63,12 @@ let output = ''
 let es = null
 let totalLines = 0
 let shownLines = 0
+/** The live screen player, or null when no stream is open. */
+let screen = null
+/** Which view the work area shows: the job stream or the machine's screen. */
+let view = 'job'
+/** The player's own status line, so "connecting" never looks like "broken". */
+let screenState = ''
 
 // ---- loading ----
 async function loadSandboxes() {
@@ -170,6 +178,42 @@ function stopStream() {
   }
 }
 
+/**
+ * Open the machine's live screen.
+ *
+ * The stream needs a bearer, and a WebSocket handshake cannot carry an Authorization header from a
+ * browser — so the token travels as a query parameter HERE, and only here. The extension checks it
+ * before dialling the worker, so an unauthenticated caller never reaches a screen.
+ *
+ * This is a deliberate exception to the rule that tokens do not go in URLs: the alternative is no
+ * screen at all, and the exposure is bounded by the same-origin proxy and a short-lived token.
+ */
+function startScreen(canvas) {
+  stopScreen()
+  screenState = 'connecting'
+  // Built with a real query object rather than string concatenation: `withSession` may add the first
+  // `?` or append to one, and appending "&token=" to a path with no query produced a broken URL.
+  const q = new URLSearchParams()
+  if (SESSION !== '') q.set('session', SESSION)
+  q.set('token', token())
+  const url = API + `sandboxes/${encodeURIComponent(sbName)}/screen?${q.toString()}`
+  screen = createScreen(canvas, {
+    url,
+    onState(s) {
+      screenState = s
+      const el = document.getElementById('screen-state')
+      if (el) el.textContent = s
+    },
+  })
+}
+
+function stopScreen() {
+  if (screen) {
+    screen.close()
+    screen = null
+  }
+}
+
 // ---- rendering ----
 function el(tag, props = {}, kids = []) {
   const n = document.createElement(tag)
@@ -259,23 +303,82 @@ function render() {
 
   // ---- output ----
   const main = el('main', { class: narrow && jobId === '' ? 'hidden' : '' })
-  if (jobId === '') {
-    main.append(el('div', { class: 'state', text: sbName === '' ? 'Pick a machine.' : 'Pick a job.' }))
+  if (sbName === '') {
+    main.append(el('div', { class: 'state', text: 'Pick a machine.' }))
   } else {
+    const sb = sandboxes.find(s => s.name === sbName)
+    // Two views of the same machine: what it is RUNNING (screen) and what it PRODUCED (jobs). The
+    // switch sits in the header because it changes what the whole pane means.
+    const tabs = el('span', { class: 'tabs' }, [
+      el('button', {
+        class: `tab${view === 'screen' ? ' on' : ''}`,
+        text: 'Screen',
+        onclick: () => {
+          view = 'screen'
+          render()
+        },
+      }),
+      el('button', {
+        class: `tab${view === 'job' ? ' on' : ''}`,
+        text: 'Output',
+        onclick: () => {
+          view = 'job'
+          render()
+        },
+      }),
+    ])
     const back = narrow
-      ? el('button', { class: 'muted', text: '←', title: 'back', onclick: () => { jobId = ''; stopStream(); render() } })
+      ? el('button', {
+          class: 'muted',
+          text: '←',
+          title: 'back',
+          onclick: () => {
+            jobId = ''
+            stopStream()
+            render()
+          },
+        })
       : null
-    main.append(
-      el('header', {}, [
-        back,
-        el('span', { class: 'title mono micro', text: jobId }),
-        totalLines > 0 ? el('span', { class: 'micro muted', text: `${shownLines}/${totalLines} lines` }) : null,
-      ]),
-    )
-    const term = el('pre', { class: 'term' })
-    term.textContent = output === '' ? 'waiting for output…' : output
-    term.id = 'term'
-    main.append(term)
+
+    if (view === 'screen') {
+      main.append(el('header', {}, [back, el('span', { class: 'title', text: sbName }), tabs]))
+      // A headless machine has no screen to show, and offering one would be a permanent spinner.
+      // The test is `screen` (a desktop is present), NOT `a11y` (an accessibility CLI is on PATH):
+      // those are different questions, and a Wayland box can have a screen and no xa11y.
+      if (sb && !sb.screen) {
+        main.append(
+          el('div', {
+            class: 'state',
+            text: `${sbName} is headless${sb.os ? ` (${sb.os})` : ''}. There is no screen to show.`,
+          }),
+        )
+      } else {
+        const canvas = el('canvas', { class: 'screen' })
+        const status = el('div', { class: 'screen-state micro muted', id: 'screen-state', text: 'connecting' })
+        main.append(el('div', { class: 'screen-wrap' }, [canvas, status]))
+        // Started AFTER the canvas is in the document: the decoder paints into it, and a canvas that
+        // is not mounted yet would be painted once and then thrown away by the next render.
+        requestAnimationFrame(() => startScreen(canvas))
+      }
+    } else if (jobId === '') {
+      main.append(el('header', {}, [back, el('span', { class: 'title', text: sbName }), tabs]))
+      stopScreen()
+      main.append(el('div', { class: 'state', text: 'Pick a job on the left.' }))
+    } else {
+      stopScreen()
+      main.append(
+        el('header', {}, [
+          back,
+          el('span', { class: 'title mono micro', text: jobId }),
+          totalLines > 0 ? el('span', { class: 'micro muted', text: `${shownLines}/${totalLines} lines` }) : null,
+          tabs,
+        ]),
+      )
+      const term = el('pre', { class: 'term' })
+      term.textContent = output === '' ? 'waiting for output…' : output
+      term.id = 'term'
+      main.append(term)
+    }
   }
 
   app.append(railSb, railJobs, main)

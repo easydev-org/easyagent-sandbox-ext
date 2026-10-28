@@ -22,8 +22,16 @@ type SandboxRow struct {
 	// Platform is the GUI platform ("wayland", "x11", "macos", "windows", "android"), or "" for a
 	// headless machine.
 	Platform string `json:"platform"`
-	// A11y is true when the machine can drive a GUI — the panel offers a live screen only for those,
-	// because a headless worker has none to show.
+	// Screen is true when a graphical desktop is present, which is exactly what determines whether
+	// the worker mounts its `/est/ws` stream: `easyworker` only registers that route under
+	// `if hasScreen()`, and `hasScreen` is `DISPLAY` or `WAYLAND_DISPLAY` being set.
+	//
+	// NOT `a11y`: that field reports an accessibility CLI on PATH, which is a different question and
+	// is false on a machine with a perfectly good screen. Using it here made every sandbox look
+	// headless and hid the stream behind a "no screen" message.
+	Screen bool `json:"screen"`
+	// A11y is true when the machine can drive a GUI through the accessibility CLI. Kept because it
+	// answers a different question from `screen` — a Wayland box can have a screen and no xa11y.
 	A11y bool `json:"a11y"`
 	// Live is false when the worker did not answer. Reported rather than omitted: a sandbox that is
 	// down is information, and hiding it makes the panel look empty instead of broken.
@@ -51,6 +59,7 @@ func (h *handler) sandboxes(w http.ResponseWriter, r *http.Request) {
 			row.Live = true
 			row.OS = info.GetOs()
 			row.Platform = info.GetCapabilities().GetPlatform()
+			row.Screen = info.GetCapabilities().GetDesktop()
 			row.A11y = info.GetCapabilities().GetXa11Y()
 		}
 		rows = append(rows, row)

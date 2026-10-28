@@ -122,12 +122,17 @@ func (h *handler) findSandbox(w http.ResponseWriter, r *http.Request, name strin
 	return config.Sandbox{}, false
 }
 
+// bearerOf reads the caller's token.
+//
+// The QUERY PARAMETER is a deliberate exception, and only it: a browser's WebSocket handshake cannot
+// set an Authorization header, so the screen stream has nowhere else to put its credential. Every
+// other route must use the header, and this is why the header is still checked FIRST.
 func bearerOf(r *http.Request) string {
 	v := r.Header.Get("Authorization")
 	if len(v) > 7 && strings.EqualFold(v[:7], "bearer ") {
 		return strings.TrimSpace(v[7:])
 	}
-	return ""
+	return strings.TrimSpace(r.URL.Query().Get("token"))
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {
