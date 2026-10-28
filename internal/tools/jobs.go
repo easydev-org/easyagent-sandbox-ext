@@ -157,7 +157,12 @@ func (t *toolset) jobStart(ctx context.Context, args map[string]any, callID, ses
 			// find out whether it had finished. Trailing status reads like a shell
 			// prompt after its output.
 			Content: strings.TrimRight(text, "\n") + "\n" + jobStatusLine(t, session, tenant, jobID, state, code, timeoutS),
-			Data:    map[string]any{"jobId": jobID, "state": state, "timeoutSec": timeoutS},
+			Data: map[string]any{
+				"jobId": jobID, "state": state, "timeoutSec": timeoutS,
+				// The panel opens ON THIS JOB: the caller just waited for it, and making them find it
+				// again would waste the wait they already did.
+				"view": jobView(s.Name, jobID),
+			},
 		}, nil
 	}
 	text, _, rerr := renderOutput(ctx, cl, jobID, 0, 0, "all")
@@ -166,7 +171,10 @@ func (t *toolset) jobStart(ctx context.Context, args map[string]any, callID, ses
 	}
 	return extension.ToolResultData{
 		Content: strings.TrimRight(text, "\n") + "\n" + jobStatusLine(t, session, tenant, jobID, state, code, timeoutS),
-		Data:    map[string]any{"jobId": jobID, "state": state, "exitCode": code},
+		Data: map[string]any{
+			"jobId": jobID, "state": state, "exitCode": code,
+			"view": jobView(s.Name, jobID),
+		},
 	}, nil
 }
 
@@ -281,7 +289,10 @@ func (t *toolset) jobWait(ctx context.Context, args map[string]any, callID, sess
 			Content: i18n.T(t.locale(session, tenant), i18n.MsgJobDone,
 				i18n.Params{"id": jobID, "state": state, "code": fmt.Sprintf("%d", code)}) +
 				"\n" + outputUnavailableNote(t, session, tenant, rerr),
-			Data: map[string]any{"jobId": jobID, "state": state, "exitCode": code, "outputError": rerr.Error()},
+			Data: map[string]any{
+				"jobId": jobID, "state": state, "exitCode": code, "outputError": rerr.Error(),
+				"view": jobView(s.Name, jobID),
+			},
 		}, nil
 	}
 	// Same reasoning as jobOutput: stdout/stderr is only the tail of a pipeline.
@@ -293,7 +304,13 @@ func (t *toolset) jobWait(ctx context.Context, args map[string]any, callID, sess
 		}
 	}
 	head := i18n.T(t.locale(session, tenant), i18n.MsgJobDone, i18n.Params{"id": jobID, "state": state, "code": fmt.Sprintf("%d", code)})
-	return extension.ToolResultData{Content: head + "\n" + text, Data: map[string]any{"jobId": jobID, "state": state, "exitCode": code}}, nil
+	return extension.ToolResultData{
+		Content: head + "\n" + text,
+		Data: map[string]any{
+			"jobId": jobID, "state": state, "exitCode": code,
+			"view": jobView(s.Name, jobID),
+		},
+	}, nil
 }
 
 func (t *toolset) jobKill(ctx context.Context, args map[string]any, callID, session, tenant string) (extension.ToolResultData, error) {
@@ -327,5 +344,13 @@ func (t *toolset) jobList(ctx context.Context, args map[string]any, callID, sess
 	for _, j := range res.GetJobs() {
 		lines = append(lines, fmt.Sprintf("%s %s exit=%d %s", j.GetId(), j.GetState(), j.GetExitCode(), j.GetCommand()))
 	}
-	return extension.ToolResultData{Content: strings.Join(lines, "\n"), Data: map[string]any{"jobs": res.GetJobs()}}, nil
+	return extension.ToolResultData{
+		Content: strings.Join(lines, "\n"),
+		Data: map[string]any{
+			"jobs": res.GetJobs(),
+			// A listing points at the MACHINE, not at one job: the reader has just been shown a list,
+			// and the panel's job rail is that same list, live.
+			"view": sandboxView(s.Name),
+		},
+	}, nil
 }

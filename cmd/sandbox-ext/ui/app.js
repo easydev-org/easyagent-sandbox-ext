@@ -31,6 +31,27 @@ function authHeaders() {
 /** The session this panel is scoped to, when the host supplied one. */
 const SESSION = new URLSearchParams(location.search).get('session') ?? ''
 
+/**
+ * The panel's own hash route:
+ *
+ *   #/sb/<name>              one machine, its Screen
+ *   #/sb/<name>/job/<id>     one machine, that job's output
+ *
+ * A tool's `view` builds these, so opening the panel from a result lands on the thing that result was
+ * about instead of on an empty picker.
+ */
+const HASH = (() => {
+  const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean)
+  const out = { sandbox: '', job: '', view: 'screen' }
+  if (parts[0] !== 'sb' || !parts[1]) return out
+  out.sandbox = decodeURIComponent(parts[1])
+  if (parts[2] === 'job' && parts[3]) {
+    out.job = decodeURIComponent(parts[3])
+    out.view = 'job'
+  }
+  return out
+})()
+
 function withSession(path) {
   if (SESSION === '') return path
   return path + (path.includes('?') ? '&' : '?') + 'session=' + encodeURIComponent(SESSION)
@@ -54,8 +75,8 @@ async function getJSON(path) {
 // ---- state ----
 let sandboxes = []
 let jobs = []
-let sbName = ''
-let jobId = ''
+let sbName = HASH.sandbox
+let jobId = HASH.job
 let listError = ''
 let jobError = ''
 let output = ''
@@ -66,7 +87,7 @@ let shownLines = 0
 /** The live screen player, or null when no stream is open. */
 let screen = null
 /** Which view the work area shows: the job stream or the machine's screen. */
-let view = 'job'
+let view = HASH.view
 /** The player's own status line, so "connecting" never looks like "broken". */
 let screenState = ''
 
@@ -101,6 +122,13 @@ async function loadJobs() {
     jobError = e instanceof Error ? e.message : String(e)
   }
   render()
+  // A job named in the hash is opened once its list arrives. Done HERE rather than at startup
+  // because the job may be older than this page load: the panel asks the machine, and the machine
+  // still has it.
+  if (jobId !== '' && view === 'job' && output === '') {
+    const j = jobs.find(x => x.id === jobId)
+    if (j) watch(j)
+  }
 }
 
 /**
@@ -413,7 +441,10 @@ window.addEventListener('message', ev => {
 
 // ---- go ----
 render()
-void loadSandboxes()
+// The hash decides what opens: a result about one job should land ON it, not on an empty picker.
+void loadSandboxes().then(() => {
+  if (sbName !== '') void loadJobs()
+})
 setInterval(() => void loadSandboxes(), 10000)
 setInterval(() => {
   if (sbName !== '') void loadJobs()
