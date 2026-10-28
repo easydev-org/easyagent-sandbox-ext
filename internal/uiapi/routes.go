@@ -58,9 +58,9 @@ func (h *handler) sandboxes(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"sandboxes": rows, "count": len(rows)})
 }
 
-// sandboxSub dispatches /sandboxes/{name}/screen.
+// sandboxSub dispatches <prefix>/sandboxes/{name}/screen.
 func (h *handler) sandboxSub(w http.ResponseWriter, r *http.Request) {
-	rest := strings.TrimPrefix(r.URL.Path, "/sandboxes/")
+	rest := strings.TrimPrefix(r.URL.Path, h.prefix+"/sandboxes/")
 	parts := strings.Split(rest, "/")
 	if len(parts) < 2 || parts[0] == "" {
 		writeErr(w, http.StatusNotFound, "not found")
@@ -105,9 +105,9 @@ func (h *handler) jobs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"jobs": res.GetJobs(), "count": len(res.GetJobs())})
 }
 
-// jobSub dispatches /jobs/{sb}/{id}/watch and /jobs/{sb}/{id}/output.
+// jobSub dispatches <prefix>/jobs/{sb}/{id}/watch and .../output.
 func (h *handler) jobSub(w http.ResponseWriter, r *http.Request) {
-	rest := strings.TrimPrefix(r.URL.Path, "/jobs/")
+	rest := strings.TrimPrefix(r.URL.Path, h.prefix+"/jobs/")
 	parts := strings.Split(rest, "/")
 	if len(parts) < 3 || parts[0] == "" || parts[1] == "" {
 		writeErr(w, http.StatusNotFound, "not found")

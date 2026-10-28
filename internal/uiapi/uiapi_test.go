@@ -26,8 +26,13 @@ func (f fakeIdentity) Tenant(_ context.Context, bearer string) (string, error) {
 	return "", ErrUnauthenticated
 }
 
+// testPrefix is the mount path the routes carry. Not a bare "/", because MountUI hands the handler
+// the request it received — a handler registered without the prefix never matches in production,
+// and a test could not tell the difference.
+const testPrefix = "/ext/sandbox/api"
+
 func newHandler(id IdentityResolver, sandboxes func(string, string) []config.Sandbox) http.Handler {
-	return Handler(Deps{Tenants: id, Sandboxes: sandboxes})
+	return Handler(testPrefix, Deps{Tenants: id, Sandboxes: sandboxes})
 }
 
 /**
@@ -43,10 +48,10 @@ func TestUnauthenticatedIsRefused(t *testing.T) {
 			return nil
 		})
 	for _, path := range []string{
-		"/sandboxes",
-		"/jobs?sb=box",
-		"/jobs/box/job-1/watch",
-		"/sandboxes/box/screen",
+		testPrefix + "/sandboxes",
+		testPrefix + "/jobs?sb=box",
+		testPrefix + "/jobs/box/job-1/watch",
+		testPrefix + "/sandboxes/box/screen",
 	} {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
@@ -61,7 +66,7 @@ func TestUnauthenticatedIsRefused(t *testing.T) {
 func TestAgentUnreachableIsNotAnAuthFailure(t *testing.T) {
 	h := newHandler(fakeIdentity{err: errors.New("dial tcp: connection refused")},
 		func(string, string) []config.Sandbox { return nil })
-	req := httptest.NewRequest(http.MethodGet, "/sandboxes", nil)
+	req := httptest.NewRequest(http.MethodGet, testPrefix+"/sandboxes", nil)
 	// A token IS presented; the resolver simply cannot answer. Without this the request would be
 	// refused for having no credential at all, which is a different case.
 	req.Header.Set("Authorization", "Bearer some-token")
@@ -81,7 +86,7 @@ func TestTenantComesFromTheToken(t *testing.T) {
 			askedFor = tenant + "/" + session
 			return nil
 		})
-	req := httptest.NewRequest(http.MethodGet, "/sandboxes?tenant=bob&session=s1", nil)
+	req := httptest.NewRequest(http.MethodGet, testPrefix+"/sandboxes?tenant=bob&session=s1", nil)
 	req.Header.Set("Authorization", "Bearer alice-token")
 	h.ServeHTTP(httptest.NewRecorder(), req)
 
@@ -95,7 +100,7 @@ func TestTenantComesFromTheToken(t *testing.T) {
 func TestUnknownSandboxIsNotFound(t *testing.T) {
 	h := newHandler(fakeIdentity{tenantOf: map[string]string{"good": "alice"}},
 		func(string, string) []config.Sandbox { return []config.Sandbox{{Name: "mine", URL: "http://w"}} })
-	req := httptest.NewRequest(http.MethodGet, "/jobs?sb=theirs", nil)
+	req := httptest.NewRequest(http.MethodGet, testPrefix+"/jobs?sb=theirs", nil)
 	req.Header.Set("Authorization", "Bearer good")
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)

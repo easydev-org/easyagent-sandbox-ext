@@ -54,19 +54,30 @@ type IdentityResolver interface {
 // ErrUnauthenticated means the caller presented no usable bearer.
 var ErrUnauthenticated = errors.New("a bearer token is required")
 
-// Handler returns the panel's mux, mounted at prefix (e.g. "/ext/sandbox/api").
-func Handler(d Deps) http.Handler {
+/**
+ * Handler returns the panel's mux, mounted under `prefix` (e.g. "/ext/sandbox/api").
+ *
+ * The prefix is PREPENDED to every route rather than stripped by the caller: `MountUI` hands the
+ * handler the request it received, path intact, so a handler that registered a bare "/sandboxes"
+ * would never match "/ext/sandbox/api/sandboxes" and every call would 404. Registering the full path
+ * is also how the GitHub extension is wired, so the two behave the same.
+ */
+func Handler(prefix string, d Deps) http.Handler {
 	h := &handler{d: d}
+	h.prefix = strings.TrimSuffix(prefix, "/")
+	p := h.prefix + "/"
 	mux := http.NewServeMux()
-	mux.HandleFunc("/sandboxes", h.sandboxes)
-	mux.HandleFunc("/sandboxes/", h.sandboxSub)
-	mux.HandleFunc("/jobs", h.jobs)
-	mux.HandleFunc("/jobs/", h.jobSub)
+	mux.HandleFunc(p+"sandboxes", h.sandboxes)
+	mux.HandleFunc(p+"sandboxes/", h.sandboxSub)
+	mux.HandleFunc(p+"jobs", h.jobs)
+	mux.HandleFunc(p+"jobs/", h.jobSub)
 	return mux
 }
 
 type handler struct {
 	d Deps
+	// prefix is the mount point, kept so a sub-route can strip it from the request path.
+	prefix string
 }
 
 // scope authenticates the request and reads the (session, tenant) it may see.

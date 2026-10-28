@@ -33,7 +33,9 @@ const uiBase = "/ext/sandbox"
 
 // uiMux builds the panel's API surface.
 func uiMux(cache *sandbox.ClientCache, sandboxes func(session, tenant string) []config.Sandbox) http.Handler {
-	return uiapi.Handler(uiapi.Deps{
+	// The mount path, not a relative one: MountUI hands the handler the request it received, so the
+	// routes have to carry the prefix.
+	return uiapi.Handler(uiBase+"/api", uiapi.Deps{
 		Sandboxes: sandboxes,
 		Cache:     cache,
 		// The agent owns the token table; an extension cannot verify a bearer on its own.
