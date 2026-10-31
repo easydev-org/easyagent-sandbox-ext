@@ -143,7 +143,16 @@ func ParsePatch(text string) ([]PatchOp, error) {
 					if strings.TrimSpace(line) == "" {
 						continue
 					}
-					return nil, fmt.Errorf("line %d: Update File content must follow an @@ line", i+1)
+					// A HUNK WITH NO `@@` IS STILL A HUNK. `-old` / `+new` says exactly where the change
+					// goes — the removal lines ARE the location — and demanding an anchor for it made a
+					// perfectly reviewable one-line replacement fail with a message about punctuation.
+					//
+					// The anchor only narrows the search; ApplyHunks already refuses an ambiguous match,
+					// so a hunk without one is not less safe, only less directed.
+					if c := line[0]; c != ' ' && c != '-' && c != '+' {
+						return nil, fmt.Errorf("line %d: hunk line must start with ' ', '-' or '+'", i+1)
+					}
+					hunk = &PatchHunk{}
 				}
 				if line == "" {
 					// An empty line inside a hunk is a blank CONTEXT line in every patch

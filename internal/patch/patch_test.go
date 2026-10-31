@@ -121,3 +121,35 @@ func TestApplyHunksKeepsMissingTrailingNewline(t *testing.T) {
 		t.Errorf("got %q, want no trailing newline", got)
 	}
 }
+
+// A HUNK WITHOUT `@@` IS A HUNK. The removal lines locate the change; an anchor only narrows the
+// search. Demanding one made a one-line replacement fail with a message about punctuation.
+func TestUpdateWithoutAnchor(t *testing.T) {
+	ops, err := ParsePatch("*** Begin Patch\n*** Update File: a.txt\n-old\n+new\n*** End Patch\n")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(ops) != 1 || len(ops[0].Hunks) != 1 {
+		t.Fatalf("ops = %+v, want one update with one hunk", ops)
+	}
+	got, err := ApplyHunks("keep\nold\n", ops[0].Hunks)
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if got != "keep\nnew\n" {
+		t.Errorf("got %q", got)
+	}
+}
+
+// AND IT IS STILL REFUSED WHEN THE REMOVAL MATCHES TWICE — dropping the anchor must not drop the
+// uniqueness check.
+func TestUpdateWithoutAnchorStillRefusesAmbiguity(t *testing.T) {
+	ops, err := ParsePatch("*** Begin Patch\n*** Update File: a.txt\n-old\n+new\n*** End Patch\n")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if _, err := ApplyHunks("old\nold\n", ops[0].Hunks); err == nil ||
+		!strings.Contains(err.Error(), "more than once") {
+		t.Fatalf("err = %v, want a refusal about ambiguity", err)
+	}
+}
