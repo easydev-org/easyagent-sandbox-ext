@@ -23,12 +23,23 @@ optional `sandbox` argument selecting one by name (the first is the default).
 
 ## Tools
 
-**Jobs** `sandbox-info`, `sandbox-exec`, `sandbox-job-start`,
-`sandbox-job-output`, `sandbox-job-wait`, `sandbox-job-kill`, `sandbox-job-list`
+**Jobs** `sandbox-info`, `sandbox-job-start` (with a REQUIRED `lang`),
+`sandbox-job-output`, `sandbox-job-wait`, `sandbox-job-kill`, `sandbox-job-list`,
+`sandbox-job-stdin`
 
-**Files** `sandbox-file-read`, `sandbox-file-write`, `sandbox-file-list`,
-`sandbox-file-delete`, `sandbox-file-move`, `sandbox-file-copy`,
+**Files** `sandbox-file-read`, `sandbox-file-list`, `sandbox-file-patch`,
 `sandbox-download`, `sandbox-upload`
+
+`sandbox-file-patch` is the ONLY tool that writes: one `*** Begin Patch` document
+creates, edits and deletes, and nothing is written until every hunk has been proven
+to apply. It replaces the separate write/delete/move/copy tools, which did the same
+thing four ways — and a patch says what the change IS, where resending a whole file
+does not.
+
+`lang` has no default on purpose: `echo hi && ls` is bash, is a syntax error in
+Windows PowerShell 5.1, and means something else in PowerShell 7. Read
+`sandbox-info` for the languages a sandbox can actually run (the engine lists only
+interpreters it PROBED by running one), and prefer `python` when it is there.
 
 **GUI** `computer-info`, `computer-apps`, `computer-snapshot`, `computer-find`,
 `computer-action`, `computer-click`, `computer-type`, `computer-key`,
