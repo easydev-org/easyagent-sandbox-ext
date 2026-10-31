@@ -251,27 +251,6 @@ tools:
             zh: "最大行数。"
       required: [path]
     required_config: [sandboxes]
-  - name: sandbox-file-write
-    description: >-
-      Overwrite a file with `content`; returns the numbered whole file.
-    descriptions:
-      zh: >-
-        用 `content` 覆盖文件；返回带行号的完整文件。
-    input_schema:
-      type: object
-      properties:
-        path:
-          type: string
-          description: "File path."
-          descriptions:
-            zh: "文件路径。"
-        content:
-          type: string
-          description: "New file content."
-          descriptions:
-            zh: "新的文件内容。"
-      required: [path, content]
-    required_config: [sandboxes]
     requires: [file.write]
   - name: sandbox-file-list
     description: >-
@@ -299,66 +278,65 @@ tools:
             zh: "最大条目数（默认 200）。"
       required: []
     required_config: [sandboxes]
-  - name: sandbox-file-delete
+  - name: sandbox-file-patch
     description: >-
-      Delete a file or directory tree.
+      Create, edit and delete files from ONE patch document. This is the only tool that
+      writes: it replaces the separate write, delete, move and copy tools, which did the
+      same thing four ways and gave a caller four chances to pick the wrong one.
+      A patch says what the change IS. "replace these lines" is reviewable in the tool
+      call; resending a 400-line file is not, and a reviewer cannot see what changed.
+      NOTHING IS WRITTEN UNTIL EVERY OPERATION HAS BEEN PROVEN. The whole patch is
+      resolved against the files as they are and only then applied, so a rejected
+      patch — one bad hunk, one missing anchor — leaves the workspace exactly as it was.
+      THE GRAMMAR, the same one gitdev-ext uses:
+        *** Begin Patch
+        *** Add File: notes/todo.md
+        +first line
+        *** Update File: app.py
+        @@ def main():
+             unchanged context
+        -    old line
+        +    new line
+        *** Delete File: scratch.txt
+        *** End Patch
+      A MOVE IS A Delete File plus an Add File of the same content in one patch —
+      spelling out what actually happens, rather than a Move that cannot overwrite.
+      An Add over an existing file is REFUSED (use Update); an Update whose context
+      matches twice is REFUSED (add surrounding lines to disambiguate).
     descriptions:
       zh: >-
-        删除文件或目录树。
+        用**一份 patch 文档**创建、修改、删除文件。这是唯一会写文件的工具：它取代了原来的
+        write、delete、move、copy 四个工具——同一件事四种做法，调用方有四次选错的机会。
+        patch 直接说明「改动是什么」：「替换这几行」在工具调用里可审阅；重发一个 400 行的文件不可审阅，
+        审阅者也看不出改了什么。
+        **全部校验通过之前不写任何东西**：整份 patch 先针对当前文件解析成功，然后才落地；
+        所以被拒的 patch（一个坏 hunk、一个找不到的锚点）会让工作区保持原样。
+        **语法与 gitdev-ext 相同**：
+          *** Begin Patch
+          *** Add File: notes/todo.md
+          +第一行
+          *** Update File: app.py
+          @@ def main():
+              未改动的上下文
+          -    旧行
+          +    新行
+          *** Delete File: scratch.txt
+          *** End Patch
+        **移动 = 同一份 patch 里 Delete File + Add File**，把实际发生的事写清楚，
+        而不是一个无法覆盖目标的 Move。
+        Add 一个已存在的文件会被**拒绝**（应当用 Update）；Update 的上下文命中两处也会被**拒绝**
+        （补上更多上下文以消除歧义）。
     input_schema:
       type: object
       properties:
-        path:
+        patch:
           type: string
-          description: "Path to delete."
+          description: "The *** Begin Patch ... *** End Patch document. Operations: Add File, Update File (with @@ hunks), Delete File."
           descriptions:
-            zh: "要删除的路径。"
-      required: [path]
+            zh: "*** Begin Patch … *** End Patch 文档。操作有：Add File、Update File（配 @@ hunk）、Delete File。"
+      required: [patch]
     required_config: [sandboxes]
     requires: [file.write]
-  - name: sandbox-file-move
-    description: >-
-      Move/rename a path.
-    descriptions:
-      zh: >-
-        移动/重命名路径。
-    input_schema:
-      type: object
-      properties:
-        from:
-          type: string
-          description: "Source path."
-          descriptions:
-            zh: "源路径。"
-        to:
-          type: string
-          description: "Destination path."
-          descriptions:
-            zh: "目标路径。"
-      required: [from, to]
-    required_config: [sandboxes]
-    requires: [file.write]
-  - name: sandbox-file-copy
-    description: >-
-      Copy a path.
-    descriptions:
-      zh: >-
-        复制路径。
-    input_schema:
-      type: object
-      properties:
-        from:
-          type: string
-          description: "Source path."
-          descriptions:
-            zh: "源路径。"
-        to:
-          type: string
-          description: "Destination path."
-          descriptions:
-            zh: "目标路径。"
-      required: [from, to]
-    required_config: [sandboxes]
   - name: sandbox-download
     description: >-
       Download a sandbox file into the agent file store, returning a file:<code>.

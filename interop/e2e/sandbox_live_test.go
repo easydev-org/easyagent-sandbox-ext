@@ -58,7 +58,7 @@ func TestDeclaresItsTools(t *testing.T) {
 	}
 	for _, want := range []string{
 		"list-sandboxes", "sandbox-info",
-		"sandbox-file-write", "sandbox-file-read",
+		"sandbox-file-patch", "sandbox-file-read",
 		"sandbox-job-start",
 	} {
 		if !contains(declared, want) {
@@ -115,8 +115,12 @@ func TestWritesAndReadsAFileInTheSandbox(t *testing.T) {
 
 	// file.write for the write, and nothing for the read: the read tool declares no `requires`, and
 	// passing a grant it does not need would hide a manifest that stopped gating the write.
-	callToolGrants(t, a, "sandbox-file-write",
-		map[string]any{"path": path, "content": body}, sandboxGrants("pod-a"))
+	//
+	// THE WRITE IS THE PATCH TOOL NOW. One tool creates, edits and deletes, so a caller cannot pick
+	// `write` where it meant `update` — and the hunk form makes the change reviewable in the call.
+	callToolGrants(t, a, "sandbox-file-patch",
+		map[string]any{"patch": "*** Begin Patch\n*** Add File: " + path + "\n+" +
+			strings.ReplaceAll(body, "\n", "\n+") + "\n*** End Patch\n"}, sandboxGrants("pod-a"))
 
 	got := callTool(t, a, "sandbox-file-read", map[string]any{"path": path})
 	if !strings.Contains(got, body) {

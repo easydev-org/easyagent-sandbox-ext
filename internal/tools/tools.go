@@ -61,11 +61,14 @@ func Registry(d Deps) map[string]Handler {
 		// draw, so there is no tool to draw it. `sandbox-job-stdin` stays: it is an RPC of its own.
 		"sandbox-job-stdin":   t.jobStdin,
 		"sandbox-file-read":   t.fileRead,
-		"sandbox-file-write":  t.fileWrite,
 		"sandbox-file-list":   t.fileList,
-		"sandbox-file-delete": t.fileDelete,
-		"sandbox-file-move":   t.fileMove,
-		"sandbox-file-copy":   t.fileCopy,
+		// FOUR TOOLS BECAME ONE. file-write, file-delete, file-move and file-copy did the same thing
+		// four ways — each with its own argument names and its own way of being wrong — and a caller had
+		// four chances to pick the wrong one. sandbox-file-patch says what the change IS, in the grammar
+		// gitdev-ext already uses, and nothing is written until every hunk has been proven to apply.
+		//
+		// read and list stay: they change nothing, and a patch cannot replace looking.
+		"sandbox-file-patch":  t.filePatch,
 		"sandbox-download":    t.download,
 		"sandbox-upload":      t.upload,
 		"computer-info":       t.computerInfo,

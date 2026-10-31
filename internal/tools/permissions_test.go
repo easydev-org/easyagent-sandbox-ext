@@ -64,8 +64,11 @@ func TestFileWriteRequiresItsOwnGrant(t *testing.T) {
 	// Holding `exec` says nothing about writing files: they are separate keys so a session
 	// can be allowed to run commands without being allowed to replace the files it runs.
 	ctx := withGrants(context.Background(), PermExec)
-	_, err := reg["sandbox-file-write"](ctx,
-		map[string]any{"path": "/w/x", "content": "y"}, "", "s", "ten")
+	// THE WRITE PATH IS THE PATCH TOOL NOW — one tool instead of four — and the grant it needs is
+	// unchanged, which is the point of this test: a session allowed to run commands is still not
+	// allowed to replace the files it runs.
+	_, err := reg["sandbox-file-patch"](ctx,
+		map[string]any{"patch": "*** Begin Patch\n*** Add File: /w/x\n+y\n*** End Patch\n"}, "", "s", "ten")
 	if err == nil {
 		t.Fatal("file write with only an exec grant must be refused")
 	}
