@@ -21,10 +21,17 @@ tools:
     required_config: [sandboxes]
   - name: sandbox-info
     description: >-
-      Show the connected easyworker's environment: OS/arch, shell, workspace root, home dir, boot id.
+      Show the connected easyworker's environment: OS/arch, workspace root, home dir, boot id —
+      AND THE LANGUAGES IT CAN RUN, which is exactly what sandbox-job-start's `lang` accepts.
+      That list is not "what is installed" but "what works": the engine probes each interpreter by
+      RUNNING a program in it, so a binary that exists and cannot execute is never listed. Read it
+      before choosing a `lang`; do not assume one.
     descriptions:
       zh: >-
-        查看所连 easyworker 的环境：OS/架构、shell、工作区根、主目录、boot id。
+        查看所连 easyworker 的环境：OS/架构、工作区根、主目录、boot id——
+        **以及它能运行哪些语言**，正是 sandbox-job-start 的 `lang` 可以填的值。
+        这个列表不是「装了哪些」而是「哪些能跑」：引擎会用一个探针程序真实运行每个解释器，
+        存在但执行不了的二进制不会出现在里面。选 `lang` 之前先读它，不要凭假设。
     input_schema:
       type: object
       properties:
@@ -37,18 +44,28 @@ tools:
       Returns the job id plus the output when it finishes. If it is still running
       at the deadline, returns the job id and the output so far — the job keeps
       running, and its output streams live; read it later with sandbox-job-output.
-      `lang` IS REQUIRED: read sandbox-info for the ids this sandbox has. There is
-      deliberately no default — `echo hi && ls` is bash, is a syntax error in
-      Windows PowerShell 5.1, and means something else in PowerShell 7, so a
-      guessed language would run the command as the wrong one and report success.
+      `lang` IS REQUIRED: read sandbox-info for the ids this sandbox has. The tool
+      does not guess, because `echo hi && ls` is bash, is a syntax error in Windows
+      PowerShell 5.1, and means something else in PowerShell 7 — a guess would run
+      the command in a language it was not written in and report success.
+      PREFER python WHENEVER IT IS AVAILABLE. If sandbox-info lists `python`, write
+      the program in Python and pass `lang: "python"`: it is the same program on
+      every sandbox image, it does not depend on which shell is installed, and its
+      quoting does not change between hosts. Use bash only for what genuinely needs
+      a shell, use the host's own language (powershell, cmd) only when the task is
+      about that platform, and fall back to `sh` when it is the only thing there.
     descriptions:
       zh: >-
         用指定语言运行一条命令，最多等待 `timeout` 秒（默认 10，最大 60）。完成时返回任务 id 与输出；
         到超时仍在运行则返回任务 id 与已有输出——任务继续运行，输出会实时流式显示，
         之后可用 sandbox-job-output 读取。
-        `lang` 必填：可用 id 见 sandbox-info。故意不设默认值——`echo hi && ls` 是 bash，
+        `lang` 必填：可用 id 见 sandbox-info。工具不猜——`echo hi && ls` 是 bash，
         在 Windows PowerShell 5.1 里是语法错误，在 PowerShell 7 里又是别的意思；
-        猜一个语言会用它没被写成的语言执行并报成功。
+        猜一个语言会用命令没被写成的语言执行，然后报成功。
+        **只要 sandbox-info 里列了 `python`，就优先用 Python**：同一个程序在任何沙箱镜像上都一样，
+        不依赖装了哪个 shell，引号规则也不会随宿主变化。只有确实需要 shell 时才用 bash，
+        只有在任务本身就是那个平台时才用宿主语言（powershell、cmd），
+        环境里只剩 `sh` 时才退回 `sh`。
     input_schema:
       type: object
       properties:
