@@ -33,23 +33,40 @@ tools:
     required_config: [sandboxes]
   - name: sandbox-job-start
     description: >-
-      Run a shell command and wait up to `timeout` seconds (default 10, max 60).
+      Run a command in a named language and wait up to `timeout` seconds (default 10, max 60).
       Returns the job id plus the output when it finishes. If it is still running
       at the deadline, returns the job id and the output so far — the job keeps
       running, and its output streams live; read it later with sandbox-job-output.
+      `lang` IS REQUIRED: read sandbox-info for the ids this sandbox has. There is
+      deliberately no default — `echo hi && ls` is bash, is a syntax error in
+      Windows PowerShell 5.1, and means something else in PowerShell 7, so a
+      guessed language would run the command as the wrong one and report success.
     descriptions:
       zh: >-
-        运行一条 shell 命令并最多等待 `timeout` 秒（默认 10，最大 60）。完成时返回任务 id 与输出；
+        用指定语言运行一条命令，最多等待 `timeout` 秒（默认 10，最大 60）。完成时返回任务 id 与输出；
         到超时仍在运行则返回任务 id 与已有输出——任务继续运行，输出会实时流式显示，
         之后可用 sandbox-job-output 读取。
+        `lang` 必填：可用 id 见 sandbox-info。故意不设默认值——`echo hi && ls` 是 bash，
+        在 Windows PowerShell 5.1 里是语法错误，在 PowerShell 7 里又是别的意思；
+        猜一个语言会用它没被写成的语言执行并报成功。
     input_schema:
       type: object
       properties:
+        lang:
+          type: string
+          description: "Language the command is written in (bash, python, node, ...). Read sandbox-info for the ids."
+          descriptions:
+            zh: "命令所用的语言（bash、python、node 等）。可用 id 见 sandbox-info。"
+        mode:
+          type: string
+          description: "Named mode for that language (node: cjs/esm, bash: posix). Empty = the interpreter default. A mode the language does not declare is an error."
+          descriptions:
+            zh: "该语言的具名模式（如 node: cjs/esm、bash: posix）。留空表示解释器默认。传了该语言未声明的模式会报错。"
         command:
           type: string
-          description: "Shell command to run."
+          description: "The program text, written in `lang`."
           descriptions:
-            zh: "要运行的 shell 命令。"
+            zh: "程序正文，用 `lang` 指定的语言书写。"
         workdir:
           type: string
           description: "Working dir, relative to the workspace root."
@@ -65,20 +82,16 @@ tools:
           description: "Stream the output live while it runs (default true)."
           descriptions:
             zh: "是否实时流式输出（默认 true）。"
-      required: [command]
+      required: [lang, command]
     required_config: [sandboxes]
     requires: [exec]
   - name: sandbox-job-output
     description: >-
-      Read a window of a job's output lines, then a bounded glimpse of the
-      INTERMEDIATE pipeline streams. In a pipeline the stdout belongs only to the
-      last stage; the upstream stages' output goes into pipes and is invisible in
-      stdout. Those streams are appended after the output so you can see what each
-      stage actually produced.
+      Read a window of a job's output lines. Paged by LINE (offset/limit), and
+      filterable by stream (stdout, stderr, all).
     descriptions:
       zh: >-
-        读取任务输出行的某个窗口，随后附上管道「中间流」的有界摘要。管道里 stdout 只属于最后一段；
-        上游各段的输出进了管道，stdout 里看不到。这些流会附在输出后面，便于看清每段实际产出了什么。
+        读取任务输出行的某个窗口。按「行」分页（offset/limit），可按流筛选（stdout、stderr、all）。
     input_schema:
       type: object
       properties:
@@ -102,35 +115,15 @@ tools:
           description: "all | stdout | stderr."
           descriptions:
             zh: "all | stdout | stderr。"
-        intermediate:
-          type: boolean
-          description: >-
-            Append the intermediate pipeline streams (default true). Set false to
-            see only stdout/stderr.
-          descriptions:
-            zh: 附带管道的中间流（默认 true）。设为 false 只看 stdout/stderr。
-        intermediate_flows:
-          type: integer
-          description: "How many intermediate streams to show (default 3, max 10)."
-          descriptions:
-            zh: 显示多少个中间流（默认 3，最多 10）。
-        intermediate_lines:
-          type: integer
-          description: "Lines of each intermediate stream (default 8)."
-          descriptions:
-            zh: 每个中间流显示多少行（默认 8）。
       required: [job-id]
     required_config: [sandboxes]
   - name: sandbox-job-wait
     description: >-
       Wait up to `timeout` seconds (default 60, max 90) for a job to finish; returns
-      its state + the tail, plus a bounded glimpse of the INTERMEDIATE pipeline
-      streams (the upstream stages' output goes into pipes, so stdout alone shows
-      only the last stage).
+      its state and the tail of its output.
     descriptions:
       zh: >-
-        最多等待 `timeout` 秒（默认 60，最大 90）等待任务结束；返回状态与尾部输出，
-        并附上管道中间流的有界摘要（上游各段的输出去进了管道，stdout 只显示最后一段）。
+        最多等待 `timeout` 秒（默认 60，最大 90）等待任务结束；返回状态与尾部输出。
     input_schema:
       type: object
       properties:
@@ -185,85 +178,6 @@ tools:
             zh: "最大任务数（默认 50）。"
       required: []
     required_config: [sandboxes]
-  - name: sandbox-job-graph
-    description: >-
-      Show a job's DATAFLOW: every stream it created, with the command that
-      produced it, the command that consumed it, and its size — plus the edges
-      between streams. This is how you answer "why did the pipeline print that?"
-      without re-running it: the job's final stdout hides every intermediate step.
-    descriptions:
-      zh: >-
-        查看任务的「数据流」：它创建的每个流，含产出命令、消费命令、大小，以及流之间的边。
-        无需重跑就能回答「为什么管道输出是这个值」——任务的最终 stdout 掩盖了每个中间步骤。
-    input_schema:
-      type: object
-      properties:
-        job-id:
-          type: string
-          description: "The job id."
-          descriptions:
-            zh: "任务 id。"
-        all:
-          type: boolean
-          description: >-
-            List every stream, including the per-stage fd endpoints (stdin/
-            stdout/stderr identity, no bytes). They are folded by default because
-            each stage contributes three and they drown the real data flows.
-          descriptions:
-            zh: >-
-              列出全部流，含每个阶段的 fd 端点（stdin/stdout/stderr 的标识，不含字节）。
-              默认折叠，因为每个阶段都有 3 个，会把真正的数据流淹没。
-      required: [job-id]
-    required_config: [sandboxes]
-    namespace: jobs
-  - name: sandbox-job-flow
-    description: >-
-      Read ONE intermediate stream of a job, by fid (get the fid from
-      sandbox-job-graph). Paged by LINE (offset/limit) and optionally filtered by
-      a regexp (grep) — the filter is applied BEFORE the window, so offset/limit
-      page through what matched. Lines are numbered absolutely; binary content is
-      reported by size instead of dumped.
-    descriptions:
-      zh: >-
-        按 fid 读取任务的某一个中间流（fid 来自 sandbox-job-graph）。按「行」分页（offset/limit），
-        并可用正则（grep）过滤——过滤先于窗口，故 offset/limit 是在匹配结果上翻页。
-        行号是绝对行号；二进制只报大小而不倾倒内容。
-    input_schema:
-      type: object
-      properties:
-        job-id:
-          type: string
-          description: "The job id."
-          descriptions:
-            zh: "任务 id。"
-        fid:
-          type: integer
-          description: "The stream id, from sandbox-job-graph."
-          descriptions:
-            zh: "流 id，来自 sandbox-job-graph。"
-        grep:
-          type: string
-          description: >-
-            Regexp; only matching lines are kept, THEN offset/limit page through
-            them. Invalid regexps are rejected rather than silently matching
-            nothing.
-          descriptions:
-            zh: >-
-              正则表达式；只保留匹配的行，然后在其上按 offset/limit 分页。
-              非法正则会报错，而不是静默地匹配不到任何内容。
-        offset:
-          type: integer
-          description: "Skip this many LINES (0 = start; applies after grep)."
-          descriptions:
-            zh: "跳过多少「行」（0 表示从头；在 grep 之后生效）。"
-        limit:
-          type: integer
-          description: "Max LINES to return (default 200, max 1000)."
-          descriptions:
-            zh: "最多返回多少「行」（默认 200，上限 1000）。"
-      required: [job-id, fid]
-    required_config: [sandboxes]
-    namespace: jobs
   - name: sandbox-job-stdin
     description: >-
       Write to a running job's stdin, optionally closing it. Needed for any

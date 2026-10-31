@@ -90,7 +90,7 @@ func TestExecRunsOnSandbox(t *testing.T) {
 	reg := newRegistry(t, url)
 	// Executing a command needs `exec`: the tool refuses without it, which is the point.
 	ctx := withGrants(context.Background(), PermExec)
-	res, err := reg["sandbox-job-start"](ctx, map[string]any{"command": "echo hi"}, "", "s", "ten")
+	res, err := reg["sandbox-job-start"](ctx, map[string]any{"command": "echo hi", "lang": "bash"}, "", "s", "ten")
 	if err != nil {
 		t.Fatal(err)
 	}

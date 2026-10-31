@@ -45,7 +45,7 @@ func TestExecGrantForAnotherSandboxIsRefused(t *testing.T) {
 		Params: easybus.Struct(map[string]any{"sandbox": "other-pod"}),
 	}})
 	_, err := reg["sandbox-job-start"](ctx,
-		map[string]any{"command": "echo hi"}, "", "s", "ten")
+		map[string]any{"command": "echo hi", "lang": "bash"}, "", "s", "ten")
 	if err == nil {
 		t.Fatal("a grant for a different sandbox must not authorise this one")
 	}
@@ -95,7 +95,7 @@ func TestWildcardGrantCoversAnySandbox(t *testing.T) {
 	}})
 	// The fake server answers whatever is asked, so reaching it means the gate opened.
 	if _, err := reg["sandbox-job-start"](ctx,
-		map[string]any{"command": "echo hi"}, "", "s", "ten"); err != nil {
+		map[string]any{"command": "echo hi", "lang": "bash"}, "", "s", "ten"); err != nil {
 		t.Fatalf("a wildcard grant must cover any sandbox: %v", err)
 	}
 }

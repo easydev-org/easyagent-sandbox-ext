@@ -78,11 +78,32 @@ func (t *toolset) info(ctx context.Context, args map[string]any, callID, session
 	if err != nil {
 		return extension.ToolResultData{}, &extension.TypedError{Code: easybus.ToolResultErrorCodeRetryable, Message: fmt.Sprintf("info: %v", err)}
 	}
+	// THE LANGUAGES THIS SANDBOX CAN ACTUALLY RUN, with their ids and modes.
+	//
+	// THIS IS THE ANSWER TO "what do I pass as lang?". The engine probes each interpreter by RUNNING it,
+	// so a binary that exists but cannot execute is never offered — the list is what will work, not what
+	// is installed.
+	langs := make([]map[string]any, 0, len(info.GetInterpreters()))
+	ids := make([]string, 0, len(info.GetInterpreters()))
+	for _, in := range info.GetInterpreters() {
+		langs = append(langs, map[string]any{
+			"id": in.GetId(), "name": in.GetName(), "path": in.GetPath(),
+			"version": in.GetVersion(), "modes": in.GetModes(),
+		})
+		ids = append(ids, in.GetId())
+	}
+	shellHint := ""
+	if len(ids) > 0 {
+		shellHint = fmt.Sprintf(" | lang=%s", strings.Join(ids, "|"))
+	}
 	return extension.ToolResultData{
-		Content: fmt.Sprintf("os=%s arch=%s workspace=%s home=%s", info.GetOs(), info.GetArch(), info.GetWorkspace(), info.GetHome()),
+		Content: fmt.Sprintf("os=%s arch=%s workspace=%s home=%s%s",
+			info.GetOs(), info.GetArch(), info.GetWorkspace(), info.GetHome(), shellHint),
 		Data: map[string]any{
 			"os": info.GetOs(), "arch": info.GetArch(), "shell": info.GetShell(),
 			"workspace": info.GetWorkspace(), "home": info.GetHome(), "bootId": info.GetBootId(),
+			// The ids `sandbox-job-start` accepts, so a caller need not guess.
+			"interpreters": langs, "langs": ids,
 		},
 	}, nil
 }
@@ -116,11 +137,28 @@ func (t *toolset) jobStart(ctx context.Context, args map[string]any, callID, ses
 	if command == "" {
 		return extension.ToolResultData{}, &extension.TypedError{Code: easybus.ToolResultErrorCodeInvalidArgument, Message: "command is required"}
 	}
+	// THE LANGUAGE IS REQUIRED, and it is the engine that insists: `echo hi && ls` is bash, is a syntax
+	// error in Windows PowerShell 5.1, and means something else again in PowerShell 7. A worker that
+	// guessed would run the command as a different language from the one it was written in and report
+	// success. So this is passed through, and the engine names the ids it has when it is missing.
+	lang := argStr(args, "lang")
+	if lang == "" {
+		return extension.ToolResultData{}, &extension.TypedError{
+			Code: easybus.ToolResultErrorCodeInvalidArgument,
+			Message: "lang is required: the language the command is written in. " +
+				"Read sandbox-info for the ids this sandbox has (bash, python, node, ...). " +
+				"There is no default because guessing would run the command as the wrong language.",
+		}
+	}
 	// Clamp, do not reset: asking for >60s must give 60s, not the default.
 	timeoutS := clampInt(args, "timeout", defaultJobStartWaitS, maxJobStartWaitS)
 	cl := t.deps.Cache.Worker(ep(s))
 	started, err := cl.Execute(ctx, &workerv1.ExecuteRequest{
-		Command: command, Workdir: argStr(args, "workdir"), Env: argEnv(args),
+		Command: command, Workdir: argStr(args, "workdir"),
+		// `env` IS GONE, and not by oversight. The engine refuses per-job environments: an "extra env"
+		// is either an overlay (a second concept for every caller) or a replacement that silently drops
+		// PATH and breaks child processes. A caller that needs a variable sets it inside its program.
+		Lang: lang, Mode: argStr(args, "mode"),
 	})
 	if err != nil {
 		return extension.ToolResultData{}, &extension.TypedError{Code: easybus.ToolResultErrorCodeRetryable, Message: fmt.Sprintf("execute: %v", err)}
@@ -244,17 +282,13 @@ func (t *toolset) jobOutput(ctx context.Context, args map[string]any, callID, se
 	if err != nil {
 		return extension.ToolResultData{}, &extension.TypedError{Code: easybus.ToolResultErrorCodeNotFound, Message: fmt.Sprintf("job-output: %v", err)}
 	}
-	cl := t.deps.Cache.Worker(ep(s))
 	body := strings.Join(res.GetLines(), "\n")
-	// Append a bounded glimpse of the streams that never reached stdout: in a
-	// pipeline the upstream stages' output goes into a pipe, so stdout alone shows
-	// only the last stage. Opt-out via intermediate: false.
+	// THE INTERMEDIATE-STREAM GLIMPSE IS GONE WITH THE DATAFLOW GRAPH. It existed because the old
+	// engine decomposed a shell script into flows, so a pipeline's upstream output could be read even
+	// though only the last stage reached stdout. The engine now runs a program in one language and
+	// streams what it writes; there is no decomposition to inspect, and the program's own output is
+	// the whole of what it produced.
 	inter := ""
-	if argBool(args, "intermediate", true) {
-		inter = renderIntermediates(ctx, cl, jobID,
-			argInt(args, "intermediate_flows", defaultIntermediateFlows),
-			argInt(args, "intermediate_lines", defaultIntermediateLines))
-	}
 	if inter != "" {
 		body = strings.TrimRight(body, "\n") + "\n" + inter
 	}
@@ -295,14 +329,8 @@ func (t *toolset) jobWait(ctx context.Context, args map[string]any, callID, sess
 			},
 		}, nil
 	}
-	// Same reasoning as jobOutput: stdout/stderr is only the tail of a pipeline.
-	if argBool(args, "intermediate", true) {
-		if inter := renderIntermediates(ctx, cl, jobID,
-			argInt(args, "intermediate_flows", defaultIntermediateFlows),
-			argInt(args, "intermediate_lines", defaultIntermediateLines)); inter != "" {
-			text = strings.TrimRight(text, "\n") + "\n" + inter
-		}
-	}
+	// THE INTERMEDIATE STREAMS ARE GONE, for the reason given in jobOutput: the engine no longer
+	// decomposes a script, so there is nothing between the program and its own output.
 	head := i18n.T(t.locale(session, tenant), i18n.MsgJobDone, i18n.Params{"id": jobID, "state": state, "code": fmt.Sprintf("%d", code)})
 	return extension.ToolResultData{
 		Content: head + "\n" + text,

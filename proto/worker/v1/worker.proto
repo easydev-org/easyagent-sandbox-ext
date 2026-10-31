@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-// agent-worker: the sandbox worker contract (Connect RPC).
+// easyworker: the sandbox worker contract (Connect RPC).
 //
 // Replaces the legacy worker-go WebSocket JSON-RPC surface (/ws + /ws/job SSE)
 // with the platform's standard Connect stack — same RPC semantics as the rest
@@ -24,11 +24,11 @@ syntax = "proto3";
 // Job output history persists to sqlite (WORKER_DB; emptyDir in-cluster, so
 // everything is ephemeral to the pod) with a retention window (default 24h).
 //
-// Server: agent-worker binary (also the binary injected into cluster sandboxes;
+// Server: easyworker binary (also the binary injected into cluster sandboxes;
 // WORKER_PORT pins the listen port). Client: ext-ops (ops-extension).
 package worker.v1;
 
-option go_package = "github.com/easydev-org/easyworker/gen/worker/v1;workerv1";
+option go_package = "github.com/easydev-org/easyagent-sandbox-ext/gen/worker/v1;workerv1";
 
 // ---- capability ----
 
@@ -50,6 +50,23 @@ message InfoResponse {
   // the binary). Lets a client (the control panel, the gateway) decide what to
   // offer WITHOUT knowing the image ahead of time.
   Capabilities capabilities = 8;
+  // Interpreters the engine can actually run, probed at request time. This is
+  // what lets a client offer a language picker instead of assuming bash: an
+  // entry is present only when the interpreter RAN a probe program, so a binary
+  // that exists but cannot execute is never offered.
+  repeated Interpreter interpreters = 9;
+}
+
+// Interpreter is one language the engine can drive on THIS host.
+message Interpreter {
+  string id = 1;      // "bash", "python", "node", ...
+  string name = 2;    // "Bash", "Python", ...
+  string path = 3;    // resolved executable
+  string version = 4; // as reported by the interpreter ("" when it has none)
+  // Named execution modes this language declares (node: cjs/esm; bash: posix).
+  // Empty means the language has no either/or choice, so a client must not show
+  // a mode picker for it.
+  repeated string modes = 5;
 }
 
 // Capabilities describes optional runtime features present in the sandbox.
@@ -65,6 +82,11 @@ message Capabilities {
   bool novnc = 3;
   // The port `novnc` was detected on (0 when absent; default probe 6080).
   int32 novnc_port = 4;
+  // An HTTP easystream daemon answers on loopback, so the worker can proxy its
+  // full UI at /desktop/. False on Android, where easystream is an APK that
+  // speaks only the binary est protocol on :48079 — there the panel must use
+  // the worker's own /est/ws stream instead.
+  bool est_http = 11;
   // The `xa11y` accessibility CLI is on PATH (native-app automation, X11).
   bool xa11y = 5;
   // /etc/os-release ID (e.g. "debian", "alpine", "ubuntu"); "" if unknown.
@@ -74,6 +96,12 @@ message Capabilities {
   string platform = 7;
   // The ComputerService is usable (a GUI platform with its tooling present).
   bool computer = 8;
+  // `git` is on PATH, so jobs can clone/commit. Probed with `git --version`
+  // (not just LookPath: a stub/shim that cannot run is NOT a usable git).
+  bool git = 9;
+  // The git version string reported by `git --version` (e.g. "2.55.0"),
+  // or "" when git is absent or did not run.
+  string git_version = 10;
 }
 
 // ---- jobs ----
@@ -82,7 +110,12 @@ message Capabilities {
 message ExecuteRequest {
   string command = 1;
   string workdir = 2; // relative to the workspace root
-  map<string, string> env = 3;
+  // Field 3 (map<string,string> env) is REMOVED and reserved: the engine refuses
+  // per-job environments. An "extra env" is either an overlay (a second concept
+  // for every caller) or a replacement that silently drops PATH and breaks child
+  // processes. A caller that needs a variable sets it inside its program.
+  reserved 3;
+  reserved "env";
   // Optional wall-clock deadline: when set and exceeded, the job's whole
   // process tree is killed and the job ends in state `killed`. Cleaner than
   // wrapping the command in `timeout`, which swallows the recorded output.
@@ -90,6 +123,18 @@ message ExecuteRequest {
   // Job namespace: "user" (default) for caller commands, "computer" for the
   // worker's own GUI-automation operations. Lets a UI group them.
   string namespace = 5;
+  // Language the command is written in. REQUIRED — there is no default.
+  //
+  // A default cannot be safe: "echo hi && ls" is bash, is a syntax error in
+  // Windows PowerShell 5.1, and means something else in PowerShell 7 (ls is an
+  // alias). A worker that guessed would run the command as a different language
+  // from the one it was written in and report success. So an empty value is
+  // rejected with InvalidArgument naming the ids this host actually has; read
+  // Info.interpreters to pick one.
+  string lang = 6;
+  // Named mode for that language ("" = the interpreter default). Sending a mode
+  // a language does not declare is an error, never a silent fallback.
+  string mode = 7;
 }
 message ExecuteResponse { string job_id = 1; }
 
@@ -98,6 +143,8 @@ message JobEntry {
   string command = 2;
   // Namespace the job was registered under (see ExecuteRequest.namespace).
   string namespace = 7;
+  // Language the command ran in, so a client can label a job without guessing.
+  string lang = 8;
   string state = 3; // running | done | killed | failed
   int32 exit_code = 4;
   int64 started_at = 5;  // unix millis
@@ -161,43 +208,6 @@ message JobStdinResponse { bool ok = 1; }
 
 message JobKillRequest { string job_id = 1; }
 message JobKillResponse { bool ok = 1; }
-
-// ---- dataflow graph (easysh) -----------------------------------------------
-// The same shape easysh's own /api/jobs/{id}/graph returns, so the panel code
-// is portable between the two.
-message JobGraphRequest { string job_id = 1; }
-message JobGraphResponse {
-  repeated Flow flows = 1;
-  repeated FlowEdge edges = 2;
-}
-message Flow {
-  int64 fid = 1;
-  string kind = 2;     // pipe | file | here | dup | null | capture | terminal | fd
-  string fd = 3;       // stdin | stdout | stderr
-  string owner = 4;    // the stage this fd belongs to
-  string producer = 5; // the command that wrote it
-  string consumer = 6; // the command that read it
-  string path = 7;     // file path / here-doc tag
-  int64 bytes = 8;
-  int64 lines = 9;
-  // Source span of the owning stage (1-based; end exclusive), for highlighting.
-  int32 line = 10;
-  int32 col = 11;
-  int32 end_line = 12;
-  int32 end_col = 13;
-  string iter = 14; // loop-iteration label ("2", "2.1") when inside a loop
-}
-message FlowEdge {
-  int64 from_fid = 1;
-  int64 to_fid = 2;
-}
-
-// JobFlow returns one flow's intermediate result (the bytes a pipe carried).
-message JobFlowRequest {
-  string job_id = 1;
-  int64 fid = 2;
-}
-message JobFlowResponse { bytes data = 1; }
 
 // ---- files (binary-safe: content is bytes, no base64 hop) ----
 
@@ -287,10 +297,6 @@ service WorkerService {
   rpc JobWait(JobWaitRequest) returns (JobWaitResponse);
   rpc JobStdin(JobStdinRequest) returns (JobStdinResponse);
   rpc JobKill(JobKillRequest) returns (JobKillResponse);
-  // JobGraph is the job's easysh dataflow: every flow (pipe/redirect/fd/...)
-  // and the edges between them. JobFlow returns one flow's intermediate bytes.
-  rpc JobGraph(JobGraphRequest) returns (JobGraphResponse);
-  rpc JobFlow(JobFlowRequest) returns (JobFlowResponse);
   rpc FileRead(FileReadRequest) returns (FileReadResponse);
   rpc FileWrite(FileWriteRequest) returns (FileWriteResponse);
   rpc FileDelete(FileDeleteRequest) returns (FileDeleteResponse);

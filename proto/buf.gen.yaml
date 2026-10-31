@@ -1,16 +1,14 @@
 version: v2
+# The worker contract, generated into this module's own package path.
+#
+# THE PROTO IS COPIED FROM easyworker, not shared by import: the two are separate Go modules that
+# speak the same wire protocol, and each generates the code under its own `go_package`. What keeps them
+# honest is that the .proto files are identical apart from that one option — see the note in
+# worker/v1/worker.proto.
 plugins:
   - local: protoc-gen-go
     out: ../gen
-    # The .proto carries `go_package = ".../easyworker/gen/..."` because it is
-    # copied verbatim from the worker (the single source of truth). This module is
-    # a different one, so the package path must be rewritten — otherwise the
-    # generated code imports a module this repo does not depend on.
-    opt:
-      - paths=source_relative
-      - Mworker/v1/worker.proto=github.com/easydev-org/easyagent-sandbox-ext/gen/worker/v1;workerv1
+    opt: paths=source_relative
   - local: protoc-gen-connect-go
     out: ../gen
-    opt:
-      - paths=source_relative
-      - Mworker/v1/worker.proto=github.com/easydev-org/easyagent-sandbox-ext/gen/worker/v1;workerv1
+    opt: paths=source_relative

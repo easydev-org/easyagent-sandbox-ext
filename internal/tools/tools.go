@@ -55,10 +55,10 @@ func Registry(d Deps) map[string]Handler {
 		"sandbox-job-wait":   t.jobWait,
 		"sandbox-job-kill":   t.jobKill,
 		"sandbox-job-list":   t.jobList,
-		// The dataflow surface: easysh makes every stream an observable Flow, so a
-		// job's pipeline is inspectable instead of hidden behind its final stdout.
-		"sandbox-job-graph":   t.jobGraph,
-		"sandbox-job-flow":    t.jobFlow,
+		// THE DATAFLOW TOOLS ARE GONE. They read the old engine's decomposition of a shell script —
+		// every pipe and redirect as a Flow with an id — and the engine no longer decomposes anything:
+		// it runs a program in one language and relays what that program writes. There is no graph to
+		// draw, so there is no tool to draw it. `sandbox-job-stdin` stays: it is an RPC of its own.
 		"sandbox-job-stdin":   t.jobStdin,
 		"sandbox-file-read":   t.fileRead,
 		"sandbox-file-write":  t.fileWrite,

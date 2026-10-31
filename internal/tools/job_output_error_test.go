@@ -117,9 +117,6 @@ func (f *outputFailingWorker) JobOutput(context.Context, *workerv1.JobOutputRequ
 	// v2 takes a STRING message, not an error (see transfer_test.go): `connect.NewError(code, string)`.
 	return nil, connect.NewError(connect.CodeUnavailable, "worker went away")
 }
-func (f *outputFailingWorker) JobGraph(context.Context, *workerv1.JobGraphRequest) (*workerv1.JobGraphResponse, error) {
-	return &workerv1.JobGraphResponse{}, nil
-}
 
 // silentWorker finishes successfully with no output at all.
 type silentWorker struct {
@@ -134,7 +131,4 @@ func (f *silentWorker) JobWait(context.Context, *workerv1.JobWaitRequest) (*work
 }
 func (f *silentWorker) JobOutput(context.Context, *workerv1.JobOutputRequest) (*workerv1.JobOutputResponse, error) {
 	return &workerv1.JobOutputResponse{Lines: nil, TotalLines: 0, Done: true}, nil
-}
-func (f *silentWorker) JobGraph(context.Context, *workerv1.JobGraphRequest) (*workerv1.JobGraphResponse, error) {
-	return &workerv1.JobGraphResponse{}, nil
 }
