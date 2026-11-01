@@ -193,9 +193,11 @@ func (s *Service) RegisterDesktop(mux *http.ServeMux, base string) {
 
 		token := r.URL.Query().Get("t")
 		claims, err := s.verifyDesktop(name, token, time.Now())
+		hadCookie := false
 		if err != nil {
 			// FALL BACK TO THE COOKIE, which is what a sub-resource request has.
 			if c, cerr := r.Cookie(cookieName); cerr == nil {
+				hadCookie = true
 				claims, err = s.verifyDesktop(name, c.Value, time.Now())
 			}
 		} else {
@@ -237,7 +239,13 @@ func (s *Service) RegisterDesktop(mux *http.ServeMux, base string) {
 			// from one that carries nothing.
 			slog.WarnContext(r.Context(), "desktop refused",
 				"svc", "sandbox-ext", "sandbox", name, "tail", tail,
-				"had_query", token != "", "err", err)
+				"had_query", token != "",
+				// THE COOKIE'S PRESENCE, NOT ITS VALUE. A signature in a log is a credential in a log;
+				// whether one arrived at all is the fact needed to tell "never sent" from "sent and
+				// refused", and those two have nothing else in common.
+				"had_cookie", hadCookie,
+				"cookies", cookieNames(r),
+				"err", err)
 			http.Error(w, err.Error(), http.StatusForbidden)
 			return
 		}
@@ -339,3 +347,20 @@ func (s *Service) desktopTarget(c desktopClaims) (desktopTarget, bool) {
 
 // keep the config import meaningful if the resolver's shape changes.
 var _ = config.Sandbox{}
+
+// cookieNames lists the cookies a request carried, for a log line that must not carry their values.
+//
+// THE NAMES ARE THE USEFUL PART when a cookie is missing: "no cookies at all" and "a cookie under the
+// wrong name" are different bugs with the same symptom, and one of them is a Path that does not cover
+// the request.
+func cookieNames(r *http.Request) string {
+	all := r.Cookies()
+	if len(all) == 0 {
+		return "none"
+	}
+	names := make([]string, 0, len(all))
+	for _, c := range all {
+		names = append(names, c.Name)
+	}
+	return strings.Join(names, ",")
+}
