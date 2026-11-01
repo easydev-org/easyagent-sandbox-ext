@@ -169,3 +169,45 @@ func TestAuthorizeURLMatchesTheProxyMount(t *testing.T) {
 		t.Fatalf("claims = %+v", claims)
 	}
 }
+
+/**
+ * THE URL MUST END AT A SLASH BEFORE THE QUERY.
+ *
+ * easystream's page loads its script as `<script src="app.js">` — RELATIVE — and a browser resolves
+ * that against everything up to the LAST slash. Without one, the base was
+ * /ext/sandbox/desktop/ instead of /ext/sandbox/desktop/labwc/, so the page fetched
+ * /ext/sandbox/desktop/app.js: a path with no machine in it, refused with 403, and the panel rendered a
+ * complete UI with no script behind it.
+ *
+ * THE FAILURE LOOKED LIKE A WORKING PAGE — bars, buttons, a keyboard, and a canvas that never filled.
+ */
+func TestAuthorizeURLKeepsRelativeAssetsUnderTheMachine(t *testing.T) {
+	s := &Service{
+		SignKey: []byte("test"),
+		Sandboxes: func(_, tenant string) []config.Sandbox {
+			if tenant != "alice" {
+				return nil
+			}
+			return []config.Sandbox{{Name: "labwc", URL: "http://worker:48080", Token: "t"}}
+		},
+	}
+	ctx := context.WithValue(context.Background(), tenantKey{}, "alice")
+	res, err := s.AuthorizeDesktop(ctx, &uiv1.AuthorizeDesktopRequest{Sandbox: "labwc"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Resolve a relative asset the way a browser does, and assert it stays inside this machine's path.
+	base, berr := url.Parse("http://host" + res.Url)
+	if berr != nil {
+		t.Fatal(berr)
+	}
+	asset, aerr := base.Parse("app.js")
+	if aerr != nil {
+		t.Fatal(aerr)
+	}
+	want := "/ext/sandbox/desktop/labwc/app.js"
+	if asset.Path != want {
+		t.Fatalf("a relative app.js resolved to %q, want %q — the URL needs a trailing slash before ?t=", asset.Path, want)
+	}
+}

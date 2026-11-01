@@ -147,7 +147,14 @@ func (s *Service) AuthorizeDesktop(ctx context.Context, req *uiv1.AuthorizeDeskt
 	body := base64.RawURLEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s:%d", tenant, sb.Name, exp.Unix())))
 	sig := s.signDesktop(tenant, sb.Name, exp.Unix())
 	return &uiv1.AuthorizeDesktopResponse{
-		Url:       "/ext/sandbox/desktop/" + url.PathEscape(sb.Name) + "?t=" + url.QueryEscape(body+"."+sig),
+		// THE TRAILING SLASH IS LOAD-BEARING.
+		//
+		// easystream's page loads its script as `<script src="app.js">` — RELATIVE — and a browser
+		// resolves that against everything up to the LAST slash. Without the slash, the base is
+		// /ext/sandbox/desktop/ and not /ext/sandbox/desktop/labwc/, so the page fetched
+		// /ext/sandbox/desktop/app.js: a path with no sandbox in it, which the signature check rightly
+		// refused with 403. The page rendered its whole UI and then had no script to run it.
+		Url:       "/ext/sandbox/desktop/" + url.PathEscape(sb.Name) + "/?t=" + url.QueryEscape(body+"."+sig),
 		ExpiresAt: exp.Unix(),
 	}, nil
 }
@@ -169,7 +176,41 @@ func (s *Service) RegisterDesktop(mux *http.ServeMux, base string) {
 			return
 		}
 
-		claims, err := s.verifyDesktop(name, r.URL.Query().Get("t"), time.Now())
+		/**
+		 * TWO WAYS IN, AND BOTH ARE NEEDED.
+		 *
+		 * The SIGNED PARAMETER authorises the first request — the page itself, whose URL the panel
+		 * obtained from AuthorizeDesktop.
+		 *
+		 * A COOKIE AUTHORISES THE REST. The page loads its script as `<script src="app.js">` and its
+		 * stream as `location.pathname + 'est/ws'`; a relative sub-resource carries no query string,
+		 * so without a cookie every asset would be a 403 and the page would render its own UI and then
+		 * sit there with no script. The cookie is the signature, scoped to this one machine's path, so
+		 * it can neither outlive the link nor reach another machine.
+		 */
+		cookieName := "sa_desktop_" + name
+
+		token := r.URL.Query().Get("t")
+		claims, err := s.verifyDesktop(name, token, time.Now())
+		if err != nil {
+			// FALL BACK TO THE COOKIE, which is what a sub-resource request has.
+			if c, cerr := r.Cookie(cookieName); cerr == nil {
+				claims, err = s.verifyDesktop(name, c.Value, time.Now())
+			}
+		} else {
+			// FIRST REQUEST: hand the browser the same signature, for everything it is about to ask
+			// for. HttpOnly, because nothing in the page needs to read it; SameSite=Strict, because it
+			// authorises a screen and should never travel from another site; Path scoped to THIS
+			// machine, so a second machine is a second cookie.
+			http.SetCookie(w, &http.Cookie{
+				Name:     cookieName,
+				Value:    token,
+				Path:     prefix + name + "/",
+				HttpOnly: true,
+				SameSite: http.SameSiteStrictMode,
+				Secure:   r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https",
+			})
+		}
 		if err != nil {
 			// A BROWSEABLE ERROR, not JSON: this path is loaded by an <iframe>, and a page saying what
 			// went wrong is more useful there than a status code nobody sees.
