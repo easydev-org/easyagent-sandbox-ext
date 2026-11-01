@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -229,6 +230,12 @@ func (s *Service) RegisterDesktop(mux *http.ServeMux, base string) {
 		if err != nil {
 			// A BROWSEABLE ERROR, not JSON: this path is loaded by an <iframe>, and a page saying what
 			// went wrong is more useful there than a status code nobody sees.
+			// LOGGED, because this path is loaded by a BROWSER: there is no caller to read a stack
+			// trace, and a 403 on a request that visibly carries a token is otherwise indistinguishable
+			// from one that carries nothing.
+			slog.WarnContext(r.Context(), "desktop refused",
+				"svc", "sandbox-ext", "sandbox", name, "tail", tail,
+				"had_query", token != "", "err", err)
 			http.Error(w, err.Error(), http.StatusForbidden)
 			return
 		}
