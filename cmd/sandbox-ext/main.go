@@ -5,8 +5,8 @@
 package main
 
 import (
+	_ "embed"
 	"context"
-	"embed"
 	"log/slog"
 	"net/http"
 	"os"
@@ -25,10 +25,12 @@ import (
 //go:embed manifest.yaml
 var manifestYAML []byte
 
-//go:embed all:ui
-var uiFiles embed.FS
-
-// uiBase is where this extension's UI — and therefore its API — is mounted.
+// uiBase is where this extension's API is mounted.
+//
+// IT IS NO LONGER A MOUNT FOR A PANEL. The panel is a separate project
+// (easydev-org/easyagent-sandbox-ext-ui), installed and served by easyagent-ext-ui-host; this binary
+// is a backend and has no assets of its own. The constant survives because the API's paths are
+// absolute — /ext/sandbox/api/... — and the host forwards exactly those here.
 const uiBase = "/ext/sandbox"
 
 // uiMux builds the panel's API surface.
@@ -113,20 +115,15 @@ func main() {
 	ext = extension.New(bus, cfg)
 
 	if err := extension.Serve(ext, extension.ServeOptions{
-		// The browser panel. The extension has never had an HTTP surface: a tool only needs the bus,
-		// but a panel needs a same-origin URL, and a browser cannot reach a worker's ClusterIP.
-		UI: &extension.UISpec{
-			Assets:      uiFiles,
-			StripPrefix: "ui",
-			Base:        uiBase,
-			APIPrefix:   "/api",
-			Title:       "Sandboxes",
-			Descriptions: map[string]string{
-				"en": "Machines the agent can drive: shell, files, jobs, and their screens.",
-				"zh": "agent 可操作的机器：命令行、文件、任务，以及实时画面。",
-			},
-			Icon: "/icon.svg",
-		},
+		// NO UI SPEC, AND THAT IS THE DESIGN. The panel is easyagent-ext-ui-host's to serve: it installs
+		// the bundle from a release and answers the console's discovery probe from that bundle's own
+		// ui.json. A UISpec here would be a second, competing answer — and the console reads whichever
+		// it asks, so the two would disagree the first time either changed.
+		//
+		// IT WOULD ALSO NOT WORK. MountUI returns the handler untouched when spec.Assets is nil, so a
+		// UISpec without assets is ignored IN FULL — including APIPrefix. The API below does not need
+		// it: its routes carry the whole path (/ext/sandbox/api/...) because they are served by a
+		// different process at the other end of a proxy, not by a mount that strips a prefix.
 		Handler: uiMux(cache, func(session, tenant string) []config.Sandbox {
 			if ext == nil {
 				return nil
