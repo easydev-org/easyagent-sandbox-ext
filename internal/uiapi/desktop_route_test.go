@@ -125,6 +125,46 @@ func TestDesktopStreamIsRewrittenToTheWorkerStream(t *testing.T) {
 	}
 }
 
+/**
+ * THE STREAM KEEPS ITS ORIGIN HEADER; THE UI'S FILES DO NOT.
+ *
+ * The worker's /est/ws is served by golang.org/x/net/websocket, whose Handler REFUSES a handshake with
+ * no Origin — 403, before any of the worker's own code runs. This proxy used to strip Origin from every
+ * request to satisfy the daemon's loopback check, so the UI's files arrived and its stream never did:
+ * a panel that drew its whole toolbar, opened no socket, and said "websocket error" with nothing else
+ * to go on.
+ */
+func TestDesktopStreamKeepsItsOriginHeader(t *testing.T) {
+	seen := map[string]string{}
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen[r.URL.Path] = r.Header.Get("Origin")
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer up.Close()
+	mux, s := newDesktopMux(t, up)
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest(http.MethodGet, signedURL(t, s), nil))
+	cookie := w.Result().Cookies()[0]
+
+	for _, tc := range []struct{ path, wantOrig string }{
+		{"/ext/sandbox/desktop/labwc/est/ws?audio=1", "https://console.example"},
+		{"/ext/sandbox/desktop/labwc/app.js", ""},
+	} {
+		req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+		req.AddCookie(cookie)
+		req.Header.Set("Origin", "https://console.example")
+		mux.ServeHTTP(httptest.NewRecorder(), req)
+	}
+
+	if got := seen["/est/ws"]; got != "https://console.example" {
+		t.Fatalf("the stream reached the worker with Origin=%q; its websocket handler refuses that", got)
+	}
+	if got, ok := seen["/desktop/app.js"]; !ok || got != "" {
+		t.Fatalf("a UI file carried Origin=%q (present=%v); the daemon's check is loopback-only", got, ok)
+	}
+}
+
 // A COOKIE FOR ONE MACHINE MUST NOT OPEN ANOTHER.
 func TestDesktopCookieIsScopedToOneMachine(t *testing.T) {
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

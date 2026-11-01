@@ -279,7 +279,8 @@ func (s *Service) RegisterDesktop(mux *http.ServeMux, base string) {
 				 * itself. So the stream is rewritten to that, and everything else stays under
 				 * /desktop/.
 				 */
-				if strings.HasSuffix(tail, "est/ws") {
+				isStream := strings.HasSuffix(tail, "est/ws")
+				if isStream {
 					req.URL.Path = "/est/ws"
 				} else {
 					// /ext/sandbox/desktop/labwc/app.js -> /desktop/app.js
@@ -302,7 +303,18 @@ func (s *Service) RegisterDesktop(mux *http.ServeMux, base string) {
 				}
 				// The daemon's origin check is loopback-only; the worker's own proxy drops Origin for
 				// the same reason. A browser Origin here is an origin the daemon does not recognise.
-				req.Header.Del("Origin")
+				//
+				// NOT ON THE STREAM, THOUGH, AND THIS IS THE WHOLE BUG. The worker's /est/ws is served by
+				// golang.org/x/net/websocket, whose Handler REFUSES a handshake with no Origin — 403,
+				// before any of its own code runs. Dropping Origin for every request meant the UI's files
+				// arrived and its stream never did: a panel that rendered its whole toolbar, opened no
+				// socket, and said "websocket error" with nothing else to go on.
+				//
+				// The daemon's UI files do not care (they are static) and its own proxy drops the header
+				// for the loopback check; the stream is the one that needs it kept.
+				if !isStream {
+					req.Header.Del("Origin")
+				}
 				// The signed token is this proxy's business; the worker never sees it.
 				q := req.URL.Query()
 				q.Del("t")
