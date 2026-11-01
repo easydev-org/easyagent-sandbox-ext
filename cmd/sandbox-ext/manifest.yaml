@@ -251,7 +251,15 @@ tools:
             zh: "最大行数。"
       required: [path]
     required_config: [sandboxes]
-    requires: [file.write]
+    # NO `requires`, AND THAT IS CORRECT: reading a file changes nothing.
+    #
+    # IT WAS WRONGLY DECLARED AS `file.write` — added in a batch pass over the manifest, not by the
+    # tool, which has never called Require. The declaration was the only thing enforcing it, so a
+    # reader asking to READ a file was told it needed permission to WRITE one. That is the kind of
+    # requirement that makes an operator grant more than they meant to and never notice.
+    #
+    # The end-to-end test caught it: it reads after writing, passes `file.write` for the write and
+    # nothing for the read — which is what the manifest claimed to want — and was refused.
   - name: sandbox-file-list
     description: >-
       List a directory tree (breadth-first, up to `depth` levels).
