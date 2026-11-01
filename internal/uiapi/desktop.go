@@ -207,8 +207,23 @@ func (s *Service) RegisterDesktop(mux *http.ServeMux, base string) {
 				Value:    token,
 				Path:     prefix + name + "/",
 				HttpOnly: true,
-				SameSite: http.SameSiteStrictMode,
-				Secure:   r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https",
+				/**
+				 * SameSite=None, AND IT HAS TO BE.
+				 *
+				 * This cookie's whole job is to authorise the requests the page makes about itself —
+				 * a script, a stylesheet, a WebSocket handshake. Strict and Lax both withhold the
+				 * cookie in cases a browser classifies as cross-site, and an embedded panel is nested
+				 * one document deeper than the page that opened it; measured, Strict dropped the
+				 * cookie on the WebSocket handshake and the panel was a 403 with the token sitting
+				 * right there in a cookie the browser had.
+				 *
+				 * None sends it always, and a browser only accepts None together with Secure — which
+				 * is the second half of this and the reason the check below looks at the ingress's
+				 * header rather than at r.TLS: TLS terminates at the entrance, so the connection into
+				 * this process is plain even when the page is https.
+				 */
+				SameSite: http.SameSiteNoneMode,
+				Secure:   isHTTPS(r),
 			})
 		}
 		if err != nil {
@@ -289,6 +304,27 @@ type desktopTarget struct {
 	scheme string
 	host   string
 	token  string
+}
+
+/**
+ * isHTTPS reports whether the BROWSER'S connection was secure.
+ *
+ * IT CANNOT ASK r.TLS. TLS terminates at the ingress, so the hop into this process is plain HTTP even
+ * when the page is https — and a Secure cookie set over that hop is dropped by the browser, silently,
+ * which is the same 403 as a bad signature and takes longer to find.
+ *
+ * The ingress announces the original scheme in X-Forwarded-Proto. When it does not, the answer is "not
+ * https", because setting Secure on a genuinely plain connection makes the cookie vanish, while
+ * omitting it on a TLS connection merely makes the cookie weaker than it could be.
+ */
+func isHTTPS(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	// A chain of proxies appends: "https, http" means the ORIGINAL was https.
+	proto := r.Header.Get("X-Forwarded-Proto")
+	first, _, _ := strings.Cut(proto, ",")
+	return strings.EqualFold(strings.TrimSpace(first), "https")
 }
 
 /**
