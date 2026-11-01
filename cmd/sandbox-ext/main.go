@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 
 	easybus "github.com/easydev-org/easybus-sdk"
 	"github.com/easydev-org/easybus-sdk/extension"
@@ -73,7 +74,28 @@ func uiMux(cache *sandbox.ClientCache, sandboxes func(session, tenant string) []
 	//   - easystream's UI builds its WebSocket URL from `location.pathname + 'est/ws'`, so the mount
 	//     has to be PATH-SHAPED and has to contain the sandbox name. A query parameter would not do.
 	svc.RegisterDesktop(mux, uiBase)
-	return mux
+	/**
+	 * ONE LINE PER REQUEST THAT REACHES THIS PROCESS.
+	 *
+	 * THE 403 THAT COST THE LONGEST TO FIND WAS THE ONE WITH NO LOG AT ALL. The route logged refusals,
+	 * and DrillUpgrade requests produced none — which read as "the request never arrived", and sent the
+	 * search to the ingress, the Service and the host before coming back here. A refusal that is not
+	 * logged is indistinguishable from a request that was never made.
+	 *
+	 * INFO FOR NOW, AND ONLY FOR THE PATHS THIS INVESTIGATION IS ABOUT: a panel polls its RPCs, so
+	 * logging every request would bury the signal. The screen's paths are the ones that were silent.
+	 */
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/desktop/") {
+			slog.Default().Info("desktop request",
+				"path", r.URL.Path, "upgrade", r.Header.Get("Upgrade"),
+				"cookies", len(r.Cookies()))
+		}
+		slog.Default().Debug("request",
+			"path", r.URL.Path, "upgrade", r.Header.Get("Upgrade"),
+			"connection", r.Header.Get("Connection"), "cookies", len(r.Cookies()))
+		mux.ServeHTTP(w, r)
+	})
 }
 
 func main() {
