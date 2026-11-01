@@ -63,9 +63,16 @@ func uiMux(cache *sandbox.ClientCache, sandboxes func(session, tenant string) []
 
 	mux := http.NewServeMux()
 	mux.Handle(uiBase+"/api/", http.StripPrefix(uiBase+"/api", api))
-	// The screen, forwarded to the worker's own easystream UI rather than reimplemented. The path
-	// carries the sandbox because easystream builds its WebSocket URL from location.pathname.
-	svc.RegisterDesktop(mux, uiBase+"/api")
+	// THE SCREEN, forwarded to the worker's own easystream UI rather than reimplemented.
+	//
+	// `/ext/sandbox/desktop/...`, NOT under `/api/`. Two reasons, and the first is the one that bit:
+	//
+	//   - AuthorizeDesktop hands the panel a URL under /ext/sandbox/desktop/, and the host forwards
+	//     that prefix here. Registering the proxy under /api/ meant the two disagreed and every screen
+	//     was a 404 — while the URL looked right in a browser and in the logs.
+	//   - easystream's UI builds its WebSocket URL from `location.pathname + 'est/ws'`, so the mount
+	//     has to be PATH-SHAPED and has to contain the sandbox name. A query parameter would not do.
+	svc.RegisterDesktop(mux, uiBase)
 	return mux
 }
 

@@ -1,11 +1,16 @@
 package uiapi
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
+
+	uiv1 "github.com/easydev-org/easyagent-sandbox-ext/gen/ui/v1"
+	"github.com/easydev-org/easyagent-sandbox-ext/internal/config"
 )
 
 /**
@@ -109,5 +114,58 @@ func TestDefaultKeyIsStable(t *testing.T) {
 	exp := time.Now().Unix()
 	if a.signDesktop("alice", "labwc", exp) != b.signDesktop("alice", "labwc", exp) {
 		t.Fatal("the derived key is not stable across instances")
+	}
+}
+
+/**
+ * THE URL AuthorizeDesktop RETURNS MUST BE A PATH THE PROXY ACCEPTS.
+ *
+ * THESE TWO DISAGREED ONCE, and the failure was silent: the RPC returned
+ * /ext/sandbox/desktop/<name> while the proxy was mounted under /ext/sandbox/api/desktop/<name>, so
+ * every screen was a 404. The URL looked correct in a browser, in the network log and in the panel's
+ * own code — the mismatch only existed between two lines in different files.
+ *
+ * This asserts the SHAPE agreement, without needing a running proxy: whatever prefix the RPC builds,
+ * the proxy must be able to claim it.
+ */
+func TestAuthorizeURLMatchesTheProxyMount(t *testing.T) {
+	const base = "/ext/sandbox"
+
+	s := &Service{
+		SignKey: []byte("test"),
+		Sandboxes: func(_, tenant string) []config.Sandbox {
+			if tenant != "alice" {
+				return nil
+			}
+			return []config.Sandbox{{Name: "labwc", URL: "http://worker:48080", Token: "t"}}
+		},
+	}
+	ctx := context.WithValue(context.Background(), tenantKey{}, "alice")
+	res, err := s.AuthorizeDesktop(ctx, &uiv1.AuthorizeDesktopRequest{Sandbox: "labwc"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// THE PROXY OWNS `<base>/desktop/`. The URL must start with exactly that, or the request reaches
+	// this extension and finds no handler.
+	want := base + "/desktop/"
+	if !strings.HasPrefix(res.Url, want) {
+		t.Fatalf("AuthorizeDesktop returned %q, which the proxy at %q cannot serve", res.Url, want+"<name>")
+	}
+
+	// AND THE TOKEN IN IT MUST VERIFY, so the two halves of this feature agree end to end.
+	token := res.Url[strings.Index(res.Url, "t=")+2:]
+	if i := strings.Index(token, "&"); i >= 0 {
+		token = token[:i]
+	}
+	if unescaped, uerr := url.QueryUnescape(token); uerr == nil {
+		token = unescaped
+	}
+	claims, verr := s.verifyDesktop("labwc", token, time.Now())
+	if verr != nil {
+		t.Fatalf("the URL's own token does not verify: %v", verr)
+	}
+	if claims.tenant != "alice" {
+		t.Fatalf("claims = %+v", claims)
 	}
 }
