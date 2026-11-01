@@ -189,13 +189,40 @@ func (s *Service) RegisterDesktop(mux *http.ServeMux, base string) {
 				req.URL.Scheme = target.scheme
 				req.URL.Host = target.host
 				req.Host = target.host
-				// /ext/sandbox/desktop/labwc/app.js -> /desktop/app.js
-				req.URL.Path = "/desktop/" + tail
+				/**
+				 * THE UI'S FILES COME FROM /desktop/, ITS WEBSOCKET DOES NOT.
+				 *
+				 * easystream-webui builds its stream URL as `location.pathname + 'est/ws'`, so the
+				 * frame asks for /ext/sandbox/desktop/<name>/est/ws. Forwarding that under /desktop/
+				 * reaches the DAEMON's HTTP server, which has no /est/ws — the daemon's stream is a
+				 * SEPARATE TCP listener, and only estbridge (a browser-side byte pipe) turns it into a
+				 * WebSocket. Inside the worker there is no estbridge, so that path is a 502 and the
+				 * panel sits at "connecting" forever.
+				 *
+				 * The worker DOES serve a working WebSocket at /est/ws: the screen stream it encodes
+				 * itself. So the stream is rewritten to that, and everything else stays under
+				 * /desktop/.
+				 */
+				if strings.HasSuffix(tail, "est/ws") {
+					req.URL.Path = "/est/ws"
+				} else {
+					// /ext/sandbox/desktop/labwc/app.js -> /desktop/app.js
+					req.URL.Path = "/desktop/" + tail
+				}
 				// The worker mounts the daemon's UI at /desktop/ and injects its own control token on
 				// the way through — so this side presents the WORKER's bearer, exactly as every other
 				// call to it does. Without it /desktop/ answers 401.
 				if target.token != "" {
 					req.Header.Set("Authorization", "Bearer "+target.token)
+					// A WebSocket handshake is made by the BROWSER, and a browser cannot set an
+					// Authorization header on one — so the worker's desktopproxy supplies the token as
+					// a query parameter for exactly this case. The same value, by the same route, so
+					// the two agree about what the daemon should accept.
+					q := req.URL.Query()
+					if q.Get("token") == "" {
+						q.Set("token", target.token)
+						req.URL.RawQuery = q.Encode()
+					}
 				}
 				// The daemon's origin check is loopback-only; the worker's own proxy drops Origin for
 				// the same reason. A browser Origin here is an origin the daemon does not recognise.
