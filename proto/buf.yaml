@@ -1,3 +1,17 @@
 version: v2
 modules:
   - path: .
+lint:
+  use:
+    - STANDARD
+  except:
+    # THE WORKER CONTRACT IS VENDORED, NOT OURS TO RENAME.
+    #
+    # proto/worker/v1 came from the worker repository so this extension can call it. STANDARD wants
+    # each RPC's request type named after the SERVICE (`ComputerServiceInfoRequest`), which would mean
+    # editing a copy of somebody else's contract — and then the copy would no longer match the thing
+    # it was copied from, which is the one property a vendored contract must keep.
+    - RPC_REQUEST_STANDARD_NAME
+    - RPC_RESPONSE_STANDARD_NAME
+    - PACKAGE_DIRECTORY_MATCH
+    - SERVICE_SUFFIX

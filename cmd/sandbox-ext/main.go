@@ -19,6 +19,8 @@ import (
 	"github.com/easydev-org/easyagent-sandbox-ext/internal/sandbox"
 	"github.com/easydev-org/easyagent-sandbox-ext/internal/tools"
 	"github.com/easydev-org/easyagent-sandbox-ext/internal/uiapi"
+	"connectrpc.com/connect/v2/connecthttp"
+
 	"github.com/easydev-org/easyagent-sandbox-ext/internal/config"
 )
 
@@ -33,16 +35,38 @@ var manifestYAML []byte
 // absolute — /ext/sandbox/api/... — and the host forwards exactly those here.
 const uiBase = "/ext/sandbox"
 
-// uiMux builds the panel's API surface.
+/**
+ * uiMux builds the panel's API surface.
+ *
+ * TWO KINDS OF THING, and the split is the design:
+ *
+ *	/ext/sandbox/api/ui.v1.UiService/*   Connect RPCs — sandboxes, jobs, output, and the job stream
+ *	/ext/sandbox/api/sandboxes/{n}/screen  one WebSocket, proxying H.264 from easystream
+ *
+ * The screen is not an RPC on purpose: it is a media stream, the browser decodes it with
+ * VideoCodec, and protobuf-wrapping frames would cost two conversions per frame for nothing.
+ *
+ * THE PATHS ARE ABSOLUTE — they carry /ext/sandbox/api — because a different process (the console's
+ * host) forwards exactly those to this one. Nothing here strips a prefix.
+ */
 func uiMux(cache *sandbox.ClientCache, sandboxes func(session, tenant string) []config.Sandbox) http.Handler {
-	// The mount path, not a relative one: MountUI hands the handler the request it received, so the
-	// routes have to carry the prefix.
-	return uiapi.Handler(uiBase+"/api", uiapi.Deps{
+	svc := &uiapi.Service{
 		Sandboxes: sandboxes,
 		Cache:     cache,
 		// The agent owns the token table; an extension cannot verify a bearer on its own.
 		Tenants: &uiapi.AgentIdentity{AgentURL: envOr("AGENT_URL", "http://agent.dev.svc.cluster.local")},
-	})
+	}
+
+	// The RPCs, under a prefix that keeps them away from the one WebSocket route.
+	api := http.NewServeMux()
+	connecthttp.Mount(api, svc.NewServer(), connecthttp.WithReadMaxBytes(0))
+
+	mux := http.NewServeMux()
+	mux.Handle(uiBase+"/api/", http.StripPrefix(uiBase+"/api", api))
+	// The screen, forwarded to the worker's own easystream UI rather than reimplemented. The path
+	// carries the sandbox because easystream builds its WebSocket URL from location.pathname.
+	svc.RegisterDesktop(mux, uiBase+"/api")
+	return mux
 }
 
 func main() {

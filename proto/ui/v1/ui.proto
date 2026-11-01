@@ -1,0 +1,184 @@
+// The sandbox extension's UI API.
+//
+// THIS FILE IS THE CONTRACT between this extension's Go backend and its browser panel, which lives in
+// easydev-org/easyagent-sandbox-ext-ui and is served by easyagent-ext-ui-host. It replaces a set of
+// hand-written JSON routes whose shapes were `map[string]any` literals — the same arrangement that
+// produced an empty file tree in another extension when a route emitted `Path` and the panel read
+// `path`.
+//
+// WHAT IS NOT HERE, AND WHY: the screen stream. `GET /ext/sandbox/api/sandboxes/{name}/screen` is a
+// WebSocket carrying H.264 access units straight from easystream to the browser's VideoDecoder.
+// Wrapping those in protobuf messages would add an encode and a decode per frame and force the panel
+// to reassemble frame boundaries itself, for no benefit — a WebSocket is the right transport for a
+// media stream, and it already works. It stays a plain proxied route, documented in the README.
+syntax = "proto3";
+
+package ui.v1;
+
+option go_package = "github.com/easydev-org/easyagent-sandbox-ext/gen/ui/v1;uiv1";
+
+service UiService {
+  // ListSandboxes reports the caller's configured machines with their live status.
+  //
+  // IT PROBES EACH ONE, in sequence: the answer includes whether the machine is up, and a sandbox that
+  // is down is information rather than an omission — hiding it makes the panel look empty instead of
+  // broken.
+  rpc ListSandboxes(ListSandboxesRequest) returns (ListSandboxesResponse);
+
+  // ListJobs reports what one machine's daemon knows about.
+  //
+  // ASKED OF THE WORKER, not of this process: a job belongs to the machine that ran it, and this
+  // extension keeps no record — so a job started before this process booted, or by a tool call that
+  // has long since returned, still appears.
+  rpc ListJobs(ListJobsRequest) returns (ListJobsResponse);
+
+  // GetJobOutput returns a job's output window in one answer, for a reader that does not need it live.
+  rpc GetJobOutput(GetJobOutputRequest) returns (GetJobOutputResponse);
+
+  // WatchJob STREAMS a job's output until it finishes.
+  //
+  // THIS REPLACES SERVER-SENT EVENTS. The browser used to open an EventSource because it could not
+  // speak Connect; the panel now speaks Connect, so the stream is a server-streaming RPC over the same
+  // transport as everything else — one client, one protocol, no second way to be authenticated.
+  //
+  // The upstream is the worker's own `WatchJob` streaming RPC, so this is a genuine push from the
+  // daemon rather than a poll dressed as one.
+  rpc WatchJob(WatchJobRequest) returns (stream WatchJobResponse);
+
+  // AuthorizeDesktop returns a URL that an IFRAME can load to show the sandbox's screen.
+  //
+  // AN IFRAME NAVIGATION CANNOT CARRY AN Authorization HEADER — that is the browser's rule, not a
+  // choice here — so the URL itself has to say who was allowed to ask. This RPC is where that
+  // permission is decided: the caller's token resolves to a tenant, the sandbox must be one of THAT
+  // TENANT'S configured machines, and the returned URL carries an HMAC over (tenant, sandbox, expiry)
+  // that the proxy verifies before it forwards anything.
+  //
+  // THREE CHECKS, AND NONE CAN BE SKIPPED: here (is it yours?), at the proxy (is the signature valid
+  // and current?), and at the worker (is the configured token accepted?). A wrong token in the
+  // tenant's own config fails at the last one, which is exactly what should happen — the panel shows
+  // the machine as unreachable rather than somebody else's screen.
+  rpc AuthorizeDesktop(AuthorizeDesktopRequest) returns (AuthorizeDesktopResponse);
+}
+
+// Sandbox is one configured machine and what it said when asked.
+message Sandbox {
+  string name = 1;
+  string os = 2;
+  // The desktop flavour, e.g. "linux-wayland". Empty when the machine did not answer.
+  string platform = 3;
+  // Whether the machine has a screen. Distinct from a11y: a Wayland box can have a screen and no
+  // accessibility CLI.
+  bool screen = 4;
+  bool a11y = 5;
+  // False when the worker did not answer. Reported rather than omitted, because a sandbox that is
+  // down is something the reader needs to know.
+  bool live = 6;
+  // Why it did not answer. Empty when live.
+  string error = 7;
+}
+
+message ListSandboxesRequest {
+  // Narrows to one of the caller's OWN sessions. It can select among them, never widen the scope.
+  string session = 1;
+}
+message ListSandboxesResponse {
+  repeated Sandbox sandboxes = 1;
+  int32 count = 2;
+}
+
+message ListJobsRequest {
+  string session = 1;
+  // The sandbox to ask. Required.
+  string sandbox = 2;
+  // 0 means the default (100), capped at 1000.
+  int32 limit = 3;
+}
+
+// Job is one job as the WORKER describes it.
+//
+// THE FIELDS MIRROR THE WORKER'S `JobEntry`, including the ones this panel does not draw yet —
+// namespace, lang, and millisecond timestamps. A narrower message would have to be widened the first
+// time the panel shows a language, and until then the information would be dropped on the floor at
+// this boundary rather than absent at the source.
+message Job {
+  string id = 1;
+  string command = 2;
+  // The worker's own word: "running" | "done" | "killed" | "failed". `state` there, `state` here —
+  // renaming it in the contract would make the two disagree about a word neither invents.
+  string state = 3;
+  int32 exit_code = 4;
+  // Unix MILLISECONDS, as the worker reports them. Not a formatted string: a reader that wants to
+  // sort or subtract them should not have to parse one back.
+  int64 started_at = 5;
+  // 0 while the job is running.
+  int64 finished_at = 6;
+  // Which of the caller's machines this came from, filled in here because the worker does not know —
+  // it was asked, so it cannot say who asked.
+  string sandbox = 7;
+  string namespace = 8;
+  string lang = 9;
+}
+
+message ListJobsResponse {
+  repeated Job jobs = 1;
+  int32 count = 2;
+}
+
+message GetJobOutputRequest {
+  string session = 1;
+  string sandbox = 2;
+  string job_id = 3;
+  // The first line to return. 0 starts at the beginning.
+  int32 start = 4;
+}
+message GetJobOutputResponse {
+  repeated string lines = 1;
+  // The window the worker actually returned, so a reader can tell "this is all of it" from "this is
+  // the part that fit".
+  int32 total_lines = 2;
+  int32 start_line = 3;
+  int32 end_line = 4;
+  bool done = 5;
+}
+
+message WatchJobRequest {
+  string session = 1;
+  string sandbox = 2;
+  string job_id = 3;
+}
+
+/**
+ * One event of a job's stream.
+ *
+ * A ONE-OF, because the three are alternatives: a chunk of output, the terminal summary, or a failure.
+ * The old SSE stream sent these as three event names with a string payload, which meant the reader
+ * parsed JSON out of a text field to find an exit code.
+ */
+message WatchJobResponse {
+  oneof event {
+    string output = 1;
+    JobDone done = 2;
+    // A failure while streaming. The stream ends after this.
+    string error = 3;
+  }
+}
+
+message JobDone {
+  int32 exit_code = 1;
+  string stdout = 2;
+  string stderr = 3;
+}
+
+message AuthorizeDesktopRequest {
+  string session = 1;
+  string sandbox = 2;
+}
+
+message AuthorizeDesktopResponse {
+  // A path THIS extension serves, e.g. /ext/sandbox/desktop/labwc?t=…. Relative rather than absolute:
+  // the panel is same-origin with the console, and an absolute URL would have to guess the host.
+  string url = 1;
+  // Unix SECONDS. Sent so a panel can refresh before the link expires instead of showing a dead frame
+  // and making the reader work out why.
+  int64 expires_at = 2;
+}
