@@ -237,7 +237,10 @@ func (s *Service) RegisterDesktop(mux *http.ServeMux, base string) {
 			// LOGGED, because this path is loaded by a BROWSER: there is no caller to read a stack
 			// trace, and a 403 on a request that visibly carries a token is otherwise indistinguishable
 			// from one that carries nothing.
-			slog.WarnContext(r.Context(), "desktop refused",
+			// NOT WarnContext: a WebSocket request's context is cancelled the moment the handler
+			// writes its refusal, and a logger bound to it can drop the line — which is exactly why the
+			// 403s that mattered here were invisible while the 403s on ordinary GETs were not.
+			slog.Warn("desktop refused",
 				"svc", "sandbox-ext", "sandbox", name, "tail", tail,
 				"had_query", token != "",
 				// THE COOKIE'S PRESENCE, NOT ITS VALUE. A signature in a log is a credential in a log;
