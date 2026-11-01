@@ -100,8 +100,14 @@ func TestDesktopSubresourceIsAuthorisedByCookieAlone(t *testing.T) {
 	}
 }
 
-// AND THE STREAM GOES TO THE WORKER'S /est/ws, not under /desktop/.
-func TestDesktopStreamIsRewrittenToTheWorkerStream(t *testing.T) {
+// THE STREAM GOES TO /desktop/est/ws, UNDER THE UI'S OWN MOUNT — NOT REWRITTEN.
+//
+// IT WAS REWRITTEN ONCE, to the worker's own /est/ws, and that endpoint speaks a DIFFERENT protocol:
+// its own JSON hello and bare NAL units. easystream read the JSON as if it were packed est fields, so
+// the page drew its whole toolbar and its canvas stayed one colour. Measured against the worker
+// directly, /desktop/est/ws is a 101 with Sec-WebSocket-Protocol: est and streams binary frames — the
+// page shows "live 1024x768".
+func TestDesktopStreamStaysUnderTheDesktopMount(t *testing.T) {
 	var got string
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		got = r.URL.Path
@@ -118,10 +124,8 @@ func TestDesktopStreamIsRewrittenToTheWorkerStream(t *testing.T) {
 	req.AddCookie(cookie)
 	mux.ServeHTTP(httptest.NewRecorder(), req)
 
-	if got != "/est/ws" {
-		// FORWARDING IT UNDER /desktop/ reaches the daemon's HTTP server, which has no such route —
-		// 502, and a panel that sits at "connecting" with no way to say why.
-		t.Fatalf("the stream reached the worker at %q, want /est/ws", got)
+	if got != "/desktop/est/ws" {
+		t.Fatalf("the stream reached the worker at %q, want /desktop/est/ws", got)
 	}
 }
 
@@ -157,7 +161,7 @@ func TestDesktopStreamKeepsItsOriginHeader(t *testing.T) {
 		mux.ServeHTTP(httptest.NewRecorder(), req)
 	}
 
-	if got := seen["/est/ws"]; got != "https://console.example" {
+	if got := seen["/desktop/est/ws"]; got != "https://console.example" {
 		t.Fatalf("the stream reached the worker with Origin=%q; its websocket handler refuses that", got)
 	}
 	if got, ok := seen["/desktop/app.js"]; !ok || got != "" {

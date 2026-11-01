@@ -266,26 +266,24 @@ func (s *Service) RegisterDesktop(mux *http.ServeMux, base string) {
 				req.URL.Host = target.host
 				req.Host = target.host
 				/**
-				 * THE UI'S FILES COME FROM /desktop/, ITS WEBSOCKET DOES NOT.
+				 * EVERYTHING GOES UNDER /desktop/, INCLUDING THE WEBSOCKET.
 				 *
-				 * easystream-webui builds its stream URL as `location.pathname + 'est/ws'`, so the
-				 * frame asks for /ext/sandbox/desktop/<name>/est/ws. Forwarding that under /desktop/
-				 * reaches the DAEMON's HTTP server, which has no /est/ws — the daemon's stream is a
-				 * SEPARATE TCP listener, and only estbridge (a browser-side byte pipe) turns it into a
-				 * WebSocket. Inside the worker there is no estbridge, so that path is a 502 and the
-				 * panel sits at "connecting" forever.
+				 * THE STREAM IS NOT REWRITTEN ANY MORE, and rewriting it was the bug. easystream-webui
+				 * builds its stream URL as `location.pathname + 'est/ws'`, so a page at
+				 * /desktop/<name>/ asks for /desktop/<name>/est/ws — and the worker's /desktop/ proxy
+				 * forwards exactly that to the daemon, which serves the est protocol there. Pointing it
+				 * at the worker's own /est/ws instead delivered a DIFFERENT protocol: that endpoint
+				 * speaks its own JSON hello and bare NAL units, which is what the OLD panel decoded.
 				 *
-				 * The worker DOES serve a working WebSocket at /est/ws: the screen stream it encodes
-				 * itself. So the stream is rewritten to that, and everything else stays under
-				 * /desktop/.
+				 * MEASURED: against the worker directly, /desktop/est/ws completes a 101 with
+				 * Sec-WebSocket-Protocol: est and streams binary frames — the page shows "live
+				 * 1024x768". Against the rewritten path, the page rendered its whole toolbar and its
+				 * canvas stayed one colour, because easystream was reading a JSON document as if it
+				 * were packed est fields.
 				 */
 				isStream := strings.HasSuffix(tail, "est/ws")
-				if isStream {
-					req.URL.Path = "/est/ws"
-				} else {
-					// /ext/sandbox/desktop/labwc/app.js -> /desktop/app.js
-					req.URL.Path = "/desktop/" + tail
-				}
+				// /ext/sandbox/desktop/labwc/app.js -> /desktop/app.js
+				req.URL.Path = "/desktop/" + tail
 				// The worker mounts the daemon's UI at /desktop/ and injects its own control token on
 				// the way through — so this side presents the WORKER's bearer, exactly as every other
 				// call to it does. Without it /desktop/ answers 401.
