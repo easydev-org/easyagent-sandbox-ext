@@ -34,6 +34,7 @@ func (t *toolset) trackJob(
 	if t.deps.Jobs == nil {
 		// NO REGISTRY, NO BACKGROUND JOB. Reporting one would hand the caller an id that no other
 		// tool can resolve, which is worse than a call that simply waited.
+		slog.WarnContext(ctx, "sandbox: no job registry; the job will not be listed", "svc", "sandbox-ext", "job", jobID)
 		return
 	}
 
@@ -60,6 +61,9 @@ func (t *toolset) trackJob(
 		slog.WarnContext(ctx, "sandbox: cannot register job", "svc", "sandbox-ext", "job", jobID, "err", err)
 		return
 	}
+	// ONE LINE AT REGISTRATION, so "did the job reach the list" is answerable without inferring it
+	// from an absence of later messages.
+	slog.InfoContext(ctx, "sandbox: job registered", "svc", "sandbox-ext", "job", id, "session", session)
 
 	/**
 	 * THE HEARTBEAT OUTLIVES THE CALL. `ctx` here belongs to the tool call, which ends as soon as
