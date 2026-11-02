@@ -64,15 +64,24 @@ func TestMailboxPayloadIdIsDerivedFromTheJob(t *testing.T) {
 	a := NewMailboxPayload("sandbox-job.019abc", "make", job.StateDone, &exit)
 	b := NewMailboxPayload("sandbox-job.019abc", "make", job.StateDone, &exit)
 
-	if a.MessageID != b.MessageID {
-		t.Fatalf("the same job produced two ids: %q and %q", a.MessageID, b.MessageID)
+	// A MAP, NOT A STRUCT: `PublishMailboxEvent` runs the payload through structpb, which cannot take
+	// a Go struct and folds the failure to null — a delivered wake with no body.
+	id, _ := a["message_id"].(string)
+	if id == "" || id != b["message_id"] {
+		t.Fatalf("the same job produced two ids: %q and %q", id, b["message_id"])
 	}
-	if !strings.Contains(a.MessageID, "sandbox-job.019abc") {
-		t.Fatalf("the id does not name its job: %q", a.MessageID)
+	if !strings.Contains(id, "sandbox-job.019abc") {
+		t.Fatalf("the id does not name its job: %q", id)
+	}
+	// THE FIELD NAME IS THE AGENT'S, not this package's preference: WakePayload decodes `message_id`,
+	// and a mismatch silently falls back to a fresh mailbox id, defeating the point of deriving one.
+	if _, ok := a["message_id"]; !ok {
+		t.Fatal("the payload must spell it message_id, the snake_case name the agent decodes")
 	}
 	// THE TEXT IS WHAT THE AGENT FOLDS INTO A USER MESSAGE, so it must be non-empty or the wake
 	// arrives as a blank turn.
-	if strings.TrimSpace(a.Text) == "" {
+	text, _ := a["text"].(string)
+	if strings.TrimSpace(text) == "" {
 		t.Fatal("a wake with no text would fold an empty message into the conversation")
 	}
 }

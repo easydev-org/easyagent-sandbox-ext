@@ -45,27 +45,24 @@ func JobText(jobID, title string, state job.State, exit *int) string {
 	)
 }
 
-/**
- * MailboxPayload is what a wake carries.
- *
- * TWO FIELDS, AND THE SPLIT IS WHAT THE CONSUMER NEEDS. The agent folds this into a user message:
- * `text` becomes its body and `messageId` decides whether that has happened before. A wake that
- * arrives twice with the same id is folded once — which matters because the retry path through a
- * durable mailbox can deliver twice, and a conversation that shows the same completion twice is
- * confusing in a way a missing one is not.
- */
-type MailboxPayload struct {
-	MessageID string `json:"message_id"`
-	Text      string `json:"text"`
-}
-
 // NewMailboxPayload builds the wake for one finished job.
 //
-// THE MESSAGE ID IS DERIVED FROM THE JOB, not generated: a job has exactly one ending, so a wake
-// about it should fold at most once no matter how many times it is delivered.
-func NewMailboxPayload(jobID, title string, state job.State, exit *int) MailboxPayload {
-	return MailboxPayload{
-		MessageID: "job-done-" + jobID,
-		Text:      JobText(jobID, title, state, exit),
+// A MAP, NOT A STRUCT, AND THAT IS NOT A STYLE CHOICE. `PublishMailboxEvent` puts the payload through
+// `structpb.NewValue`, which accepts objects, arrays and scalars — NOT Go structs. A struct fails that
+// conversion and the SDK folds the error to NullValue, so the message arrives with `payload: null`:
+// delivered, folded as an empty user message, and indistinguishable from a notification the model
+// ignored.
+//
+// TWO FIELDS, AND THE SPLIT IS WHAT THE CONSUMER NEEDS. The agent folds this into a user message:
+// `text` becomes its body and `message_id` decides whether that has happened before. THE NAME IS
+// SNAKE_CASE because that is what the agent's WakePayload decodes; a mismatch silently falls back to
+// the mailbox row's own id, which is fresh on every delivery and so defeats the idempotence a derived
+// id exists for.
+func NewMailboxPayload(jobID, title string, state job.State, exit *int) map[string]any {
+	return map[string]any{
+		// DERIVED FROM THE JOB, not generated: a job has exactly one ending, so a wake about it
+		// should fold at most once no matter how many times it is delivered.
+		"message_id": "job-done-" + jobID,
+		"text":       JobText(jobID, title, state, exit),
 	}
 }
