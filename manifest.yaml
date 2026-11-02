@@ -134,12 +134,15 @@ tools:
             zh: "all | stdout | stderr。"
       required: [job-id]
     required_config: [sandboxes]
-  - name: sandbox-job-kill
+  - name: sandbox-job-cancel
     description: >-
-      Kill a job's whole process tree.
+      Stop a running job and its whole process tree. Returns once the worker has
+      accepted the kill, so a failure to cancel is reported rather than assumed
+      away. The job is recorded as cancelled in the shared job list.
     descriptions:
       zh: >-
-        终止任务及其整个进程树。
+        终止运行中的任务及其整个进程树。worker 接受终止请求后才返回，因此取消失败会被报告
+        而不是被当作成功。任务在共享任务列表中记为 cancelled。
     input_schema:
       type: object
       properties:

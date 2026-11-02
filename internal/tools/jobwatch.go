@@ -12,7 +12,7 @@ import (
 )
 
 // The watcher is process-wide, not per-toolset: sandbox-job-start runs on a
-// different toolset instance than the one that later calls sandbox-job-kill, and
+// different toolset instance than the one that later calls sandbox-job-cancel, and
 // a per-call map would lose track of relays that are still running.
 var watcher = newJobWatcher()
 

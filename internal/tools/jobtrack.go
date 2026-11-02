@@ -50,6 +50,11 @@ func (t *toolset) trackJob(
 		ExtID:     "sandbox",
 		Session:   session,
 		ToolUseID: callID,
+		// A SANDBOX JOB IS CANCELABLE WHILE IT RUNS: the worker owns the process and answers
+		// JobKill. The flag stays true after it ends — `Cancelable` describes the KIND of job, and
+		// a client that draws a cancel button for a finished one is looking at a state check it
+		// should have made anyway.
+		Cancelable: true,
 	})
 	if err != nil {
 		slog.WarnContext(ctx, "sandbox: cannot register job", "svc", "sandbox-ext", "job", jobID, "err", err)

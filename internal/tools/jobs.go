@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/easydev-org/easyagent-sandbox-ext/internal/i18n"
 	"github.com/easydev-org/easyagent-sandbox-ext/internal/sandbox"
 	easybus "github.com/easydev-org/easybus-sdk"
+	"github.com/easydev-org/easybus-sdk/job"
 	"github.com/easydev-org/easybus-sdk/extension"
 )
 
@@ -320,7 +322,19 @@ func (t *toolset) jobOutput(ctx context.Context, args map[string]any, callID, se
 }
 
 
-func (t *toolset) jobKill(ctx context.Context, args map[string]any, callID, session, tenant string) (extension.ToolResultData, error) {
+/**
+ * jobCancel stops a running command and says so to the shared job list.
+ *
+ * IT IS SYNCHRONOUS ON PURPOSE. The worker owns the process and answers JobKill with a result or an
+ * error, so a caller learns whether the kill landed — which is the question it asked. Routing this
+ * through the job list as an "intent" would turn a reliable call into a request nobody confirms.
+ *
+ * IT RECORDS `cancelled` ITSELF RATHER THAN WAITING FOR THE FOLLOWER. The follower is watching the
+ * worker's own state, and the worker reports "killed" asynchronously; writing the state here means a
+ * panel sees the cancellation at the moment it was requested, not one heartbeat later. The follower
+ * will write the same state again when the process actually dies, which is idempotent.
+ */
+func (t *toolset) jobCancel(ctx context.Context, args map[string]any, callID, session, tenant string) (extension.ToolResultData, error) {
 	s, err := t.resolve(args, session, tenant)
 	if err != nil {
 		return extension.ToolResultData{}, err
@@ -333,8 +347,22 @@ func (t *toolset) jobKill(ctx context.Context, args map[string]any, callID, sess
 		return extension.ToolResultData{}, &extension.TypedError{Code: easybus.ToolResultErrorCodeInvalidArgument, Message: "job-id is required"}
 	}
 	if _, err := t.deps.Cache.Worker(ep(s)).JobKill(ctx, &workerv1.JobKillRequest{JobId: jobID}); err != nil {
-		return extension.ToolResultData{}, &extension.TypedError{Code: easybus.ToolResultErrorCodeRetryable, Message: fmt.Sprintf("job-kill: %v", err)}
+		// THE JOB LIST IS NOT TOUCHED ON FAILURE. The process is still running — recording
+		// `cancelled` would make the list disagree with the machine.
+		return extension.ToolResultData{}, &extension.TypedError{Code: easybus.ToolResultErrorCodeRetryable, Message: fmt.Sprintf("job-cancel: %v", err)}
 	}
-	return extension.ToolResultData{Content: fmt.Sprintf("killed %s", jobID)}, nil
+	if t.deps.Jobs != nil {
+		// THE JOB ID IN THE LIST CARRIES THIS EXTENSION'S PREFIX, so it is rebuilt rather than taken
+		// from the argument: a caller may pass the bare worker id, and the entry is under the
+		// prefixed one.
+		if e, found, gerr := t.deps.Jobs.Get(ctx, tenant, session, Kind+"."+jobID); gerr == nil && found {
+			e.State = job.StateCancelled
+			e.FinishedAt = time.Now().UnixMilli()
+			if perr := t.deps.Jobs.Put(ctx, e); perr != nil {
+				slog.WarnContext(ctx, "sandbox: cannot record cancellation", "svc", "sandbox-ext", "job", jobID, "err", perr)
+			}
+		}
+	}
+	return extension.ToolResultData{Content: fmt.Sprintf("cancelled %s", jobID)}, nil
 }
 

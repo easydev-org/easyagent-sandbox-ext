@@ -75,7 +75,7 @@ func Registry(d Deps) map[string]Handler {
 		"sandbox-info":       t.info,
 		"sandbox-job-start":  t.jobStart,
 		"sandbox-job-output": t.jobOutput,
-		"sandbox-job-kill":   t.jobKill,
+		"sandbox-job-cancel": t.jobCancel,
 		// WAITING AND LISTING ARE THE AGENT'S NOW, NOT THIS EXTENSION'S.
 		//
 		// Both are answered from the shared job list, which every extension writes to and which the
