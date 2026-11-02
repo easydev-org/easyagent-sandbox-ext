@@ -49,6 +49,10 @@ func (t *toolset) trackJob(
 		Kind:      Kind,
 		Title:     command,
 		ExtID:     "sandbox",
+		// THE TENANT IS THE FIRST KEY SEGMENT, and an entry without it cannot be keyed correctly:
+		// a job written under the wrong tenant registers, renews and finishes, and the list that
+		// asks for this conversation never sees it.
+		Tenant:    tenant,
 		Session:   session,
 		ToolUseID: callID,
 		// A SANDBOX JOB IS CANCELABLE WHILE IT RUNS: the worker owns the process and answers
