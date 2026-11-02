@@ -149,7 +149,7 @@ func main() {
 				return nil
 			}
 			return ext.PublishMailboxEvent(ctx, tenant, session, "trigger",
-				tools.NewMailboxPayload(jobID, title, state, exit), "sandbox")
+				tools.NewMailboxPayload(jobID, title, state, exit), "system:sandbox")
 		},
 	})
 
