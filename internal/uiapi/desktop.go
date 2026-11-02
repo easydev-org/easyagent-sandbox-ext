@@ -237,18 +237,16 @@ func (s *Service) RegisterDesktop(mux *http.ServeMux, base string) {
 			// LOGGED, because this path is loaded by a BROWSER: there is no caller to read a stack
 			// trace, and a 403 on a request that visibly carries a token is otherwise indistinguishable
 			// from one that carries nothing.
-			// NOT WarnContext: a WebSocket request's context is cancelled the moment the handler
-			// writes its refusal, and a logger bound to it can drop the line — which is exactly why the
-			// 403s that mattered here were invisible while the 403s on ordinary GETs were not.
+			//
+			// NO CONTEXT ON THIS LOGGER. A WebSocket request's context is cancelled as the refusal is
+			// written, so slog.WarnContext dropped exactly the lines worth having — the 403s on
+			// upgrades were invisible while the 403s on ordinary GETs were not, which read as "the
+			// request never arrived".
+			//
+			// NAMES, NEVER VALUES: a signature in a log is a credential in a log.
 			slog.Warn("desktop refused",
 				"svc", "sandbox-ext", "sandbox", name, "tail", tail,
-				"had_query", token != "",
-				// THE COOKIE'S PRESENCE, NOT ITS VALUE. A signature in a log is a credential in a log;
-				// whether one arrived at all is the fact needed to tell "never sent" from "sent and
-				// refused", and those two have nothing else in common.
-				"had_cookie", hadCookie,
-				"cookies", cookieNames(r),
-				"err", err)
+				"had_query", token != "", "had_cookie", hadCookie, "err", err)
 			http.Error(w, err.Error(), http.StatusForbidden)
 			return
 		}
@@ -268,18 +266,16 @@ func (s *Service) RegisterDesktop(mux *http.ServeMux, base string) {
 				/**
 				 * EVERYTHING GOES UNDER /desktop/, INCLUDING THE WEBSOCKET.
 				 *
-				 * THE STREAM IS NOT REWRITTEN ANY MORE, and rewriting it was the bug. easystream-webui
-				 * builds its stream URL as `location.pathname + 'est/ws'`, so a page at
-				 * /desktop/<name>/ asks for /desktop/<name>/est/ws — and the worker's /desktop/ proxy
-				 * forwards exactly that to the daemon, which serves the est protocol there. Pointing it
-				 * at the worker's own /est/ws instead delivered a DIFFERENT protocol: that endpoint
-				 * speaks its own JSON hello and bare NAL units, which is what the OLD panel decoded.
+				 * NO PATH INSIDE THE UI IS REWRITTEN, and the stream is the one that matters.
+				 * easystream-webui builds its stream URL as `location.pathname + 'est/ws'`, so a page at
+				 * /desktop/<name>/ asks for /desktop/<name>/est/ws, and the worker's own /desktop/ proxy
+				 * forwards exactly that to the daemon — which speaks the est protocol there.
 				 *
-				 * MEASURED: against the worker directly, /desktop/est/ws completes a 101 with
-				 * Sec-WebSocket-Protocol: est and streams binary frames — the page shows "live
-				 * 1024x768". Against the rewritten path, the page rendered its whole toolbar and its
-				 * canvas stayed one colour, because easystream was reading a JSON document as if it
-				 * were packed est fields.
+				 * THE WORKER HAS A SECOND STREAM AT /est/ws THAT SPEAKS SOMETHING ELSE — its own JSON
+				 * hello and bare NAL units. Sending the UI there produced a page that drew its whole
+				 * toolbar, kept its socket open, received ~14 KB binary frames, and never showed a
+				 * picture: easystream was reading a JSON document as if it were packed est fields, so
+				 * it found no geometry and no codec. Two endpoints, two protocols, both plausible.
 				 */
 				isStream := strings.HasSuffix(tail, "est/ws")
 				// /ext/sandbox/desktop/labwc/app.js -> /desktop/app.js
@@ -360,20 +356,3 @@ func (s *Service) desktopTarget(c desktopClaims) (desktopTarget, bool) {
 
 // keep the config import meaningful if the resolver's shape changes.
 var _ = config.Sandbox{}
-
-// cookieNames lists the cookies a request carried, for a log line that must not carry their values.
-//
-// THE NAMES ARE THE USEFUL PART when a cookie is missing: "no cookies at all" and "a cookie under the
-// wrong name" are different bugs with the same symptom, and one of them is a Path that does not cover
-// the request.
-func cookieNames(r *http.Request) string {
-	all := r.Cookies()
-	if len(all) == 0 {
-		return "none"
-	}
-	names := make([]string, 0, len(all))
-	for _, c := range all {
-		names = append(names, c.Name)
-	}
-	return strings.Join(names, ",")
-}

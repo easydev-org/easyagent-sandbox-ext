@@ -12,6 +12,20 @@ import (
 	"time"
 )
 
+// IdentityResolver turns a bearer token into the tenant it belongs to.
+//
+// AN INTERFACE, so nothing that uses identity depends on HOW it is answered — the agent owns the token
+// table, and a test should not need one.
+type IdentityResolver interface {
+	Tenant(ctx context.Context, bearer string) (string, error)
+}
+
+// ErrUnauthenticated means the caller presented no usable bearer.
+//
+// DISTINCT FROM "the agent could not be reached", which is a different answer to the caller: one means
+// sign in again, the other means try again in a moment. Collapsing them logs people out over a blip.
+var ErrUnauthenticated = errors.New("a bearer token is required")
+
 // AgentIdentity resolves a bearer token to its tenant by asking the agent.
 //
 // WHY THE AGENT: the token is a row in the agent's database, and the token -> tenant mapping lives
