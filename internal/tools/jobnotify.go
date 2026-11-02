@@ -55,7 +55,7 @@ func JobText(jobID, title string, state job.State, exit *int) string {
  * confusing in a way a missing one is not.
  */
 type MailboxPayload struct {
-	MessageID string `json:"messageId"`
+	MessageID string `json:"message_id"`
 	Text      string `json:"text"`
 }
 
