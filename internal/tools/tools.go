@@ -14,6 +14,7 @@ import (
 	easybus "github.com/easydev-org/easybus-sdk"
 	"github.com/easydev-org/easybus-sdk/bus"
 	"github.com/easydev-org/easybus-sdk/extension"
+	"github.com/easydev-org/easybus-sdk/job"
 )
 
 // Deps is what the tools need from the extension host.
@@ -34,6 +35,28 @@ type Deps struct {
 	// streaming a command's output here costs no tokens and cannot confuse the
 	// conversation. nil means "nobody is listening" and the reporter is skipped.
 	Progress func(ctx context.Context, callID string, p *easybus.ToolProgress)
+
+	/**
+	 * Jobs is the shared list a background job appears in.
+	 *
+	 * NIL MEANS NOBODY CAN SEE THE JOB, and the tools treat that as "do not background
+	 * anything": `sandbox-job-start` then keeps its old waiting behaviour, because a job
+	 * that returns an id no other tool can look up is worse than a call that waits.
+	 */
+	Jobs *job.Registry
+
+	/**
+	 * NotifyJobDone wakes the conversation a job belonged to.
+	 *
+	 * IT IS A TRIGGER, NOT A RESULT: the text says which job ended and how, and points at
+	 * `job-output` for the rest. Putting the output here would send the same bytes twice — once
+	 * through the tool-output stream, once through the mailbox — and would mean writing a second
+	 * truncation policy beside the one the agent already applies to tool results.
+	 *
+	 * NIL MEANS NO WAKE. A toolset built without it still records job state, so a panel that
+	 * watches the registry still sees the job end; only the conversation is not prodded.
+	 */
+	NotifyJobDone func(ctx context.Context, tenant, session, jobID, title string, state job.State, exit *int) error
 }
 
 // Handler is one tool implementation.
@@ -52,14 +75,27 @@ func Registry(d Deps) map[string]Handler {
 		"sandbox-info":       t.info,
 		"sandbox-job-start":  t.jobStart,
 		"sandbox-job-output": t.jobOutput,
-		"sandbox-job-wait":   t.jobWait,
 		"sandbox-job-kill":   t.jobKill,
-		"sandbox-job-list":   t.jobList,
+		// WAITING AND LISTING ARE THE AGENT'S NOW, NOT THIS EXTENSION'S.
+		//
+		// Both are answered from the shared job list, which every extension writes to and which the
+		// agent can read without knowing which extension a job came from — so `job-wait` and
+		// `job-list` in bundled do the same work for a sandbox job as for a build or a CI run. Two
+		// tools for one question is how a model ends up picking the one that happens to be in the
+		// prompt.
+		//
+		// WHAT STAYS HERE IS WHAT ONLY THIS EXTENSION CAN ANSWER: `sandbox-job-output` reads the
+		// worker's buffer, and no generic tool can, because the worker's address and token live in
+		// this process.
 		// THE DATAFLOW TOOLS ARE GONE. They read the old engine's decomposition of a shell script —
 		// every pipe and redirect as a Flow with an id — and the engine no longer decomposes anything:
 		// it runs a program in one language and relays what that program writes. There is no graph to
 		// draw, so there is no tool to draw it. `sandbox-job-stdin` stays: it is an RPC of its own.
-		"sandbox-job-stdin":   t.jobStdin,
+		//
+		// AND STDIN IS GONE TOO, for the same reason stated the other way round: the script worker that
+		// replaced the old engine has no stdin to write to. A job is a program that runs to completion
+		// and reports; there is nothing on the other end of a pipe any more, so a tool offering one
+		// would accept a call and fail it.
 		"sandbox-file-read":   t.fileRead,
 		"sandbox-file-list":   t.fileList,
 		// FOUR TOOLS BECAME ONE. file-write, file-delete, file-move and file-copy did the same thing

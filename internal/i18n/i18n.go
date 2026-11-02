@@ -16,7 +16,6 @@ const (
 	MsgNoSandboxes            = "noSandboxes"
 	MsgUploaded               = "uploaded"
 	MsgDownloaded             = "downloaded"
-	MsgJobStdinOK             = "jobStdinOK"
 )
 
 // Catalog is the message table (open locale set: add a column per language).
@@ -42,10 +41,6 @@ var Catalog = easybusi18n.Catalog{
 	MsgJobOutputUnavailable: {
 		"en": "(output unavailable: {err} — the job's state above is still accurate)",
 		"zh": "（无法读取输出：{err} —— 上面的任务状态仍然有效）",
-	},
-	MsgJobStdinOK: {
-		"en": "wrote {n} byte(s) to job {id} stdin (closed={closed})",
-		"zh": "向任务 {id} 的标准输入写入 {n} 字节（close={closed}）",
 	},
 	MsgNoSandboxes: {
 		"en": "no sandboxes configured",

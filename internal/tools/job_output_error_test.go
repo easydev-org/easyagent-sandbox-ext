@@ -54,51 +54,47 @@ func newFakeServerWith(t *testing.T, h workerv1connect.WorkerServiceHandler) (*h
 // else, which reads as "this command printed nothing". A wrong answer that looks like a result is
 // the most expensive kind, so the failure has to appear where the output would have been.
 //
-// The tool still ANSWERS: the job's state and exit code are real information the worker did give
-// us, and failing the call would trade one missing fact for another.
-func TestJobWaitReportsOutputReadFailure(t *testing.T) {
+/**
+ * reading output when the reader cannot is a FAILURE, and that is different from waiting.
+ *
+ * `sandbox-job-wait` used to answer with an empty body and a note, because it had a second thing to
+ * report — the state and exit code it had already been given. `sandbox-job-output` has no second
+ * thing: its whole purpose is the bytes, so failing to fetch them is the answer, and an empty body
+ * here would be read as "the command printed nothing".
+ *
+ * WAITING ITSELF IS NO LONGER THIS EXTENSION'S TOOL. It is `job-wait` in bundled, which reads the
+ * shared job list and returns no output at all — so the rule it used to carry has no home here.
+ */
+func TestJobOutputFailsWhenTheWorkerCannotAnswer(t *testing.T) {
 	_, url := newFakeServerWith(t, &outputFailingWorker{})
 	reg := newRegistry(t, url)
 	ctx := withGrants(context.Background(), PermExec)
 
-	got, err := reg["sandbox-job-wait"](ctx,
-		map[string]any{"sandbox": "pod-a", "job-id": "job-1", "timeout": float64(5)}, "c1", "s", "ten")
-	if err != nil {
-		t.Fatalf("job-wait returned an error instead of a result: %v", err)
+	_, err := reg["sandbox-job-output"](ctx,
+		map[string]any{"sandbox": "pod-a", "job-id": "job-1"}, "c1", "s", "ten")
+	if err == nil {
+		t.Fatal("a failed output read must be an error, not an empty body that reads as silence")
 	}
-	if !strings.Contains(got.Content, "job-1") {
-		t.Fatalf("result does not name the job: %q", got.Content)
-	}
-	if dataOf(t, got.Data)["state"] == nil {
-		t.Fatalf("result carries no state: %+v", got.Data)
-	}
-	if !strings.Contains(strings.ToLower(got.Content), "output unavailable") {
-		t.Fatalf("result does not report that the output could not be read: %q\n"+
-			"an empty body beside a 'done' line reads as 'the command printed nothing'", got.Content)
-	}
-	if dataOf(t, got.Data)["outputError"] == nil {
-		t.Fatalf("result carries no outputError for a caller to branch on: %+v", got.Data)
+	if !strings.Contains(err.Error(), "job-1") && !strings.Contains(err.Error(), "output") {
+		t.Fatalf("the error does not say what failed: %v", err)
 	}
 }
 
 // The mirror case: a job that genuinely printed nothing must NOT look like a read failure.
 //
 // Without this the new signal would be worthless — every quiet command would report a problem.
-func TestJobWaitSilentJobIsNotAnError(t *testing.T) {
+func TestJobOutputSilentJobIsNotAnError(t *testing.T) {
 	_, url := newFakeServerWith(t, &silentWorker{})
 	reg := newRegistry(t, url)
 	ctx := withGrants(context.Background(), PermExec)
 
-	got, err := reg["sandbox-job-wait"](ctx,
-		map[string]any{"sandbox": "pod-a", "job-id": "job-2", "timeout": float64(5)}, "c2", "s", "ten")
+	got, err := reg["sandbox-job-output"](ctx,
+		map[string]any{"sandbox": "pod-a", "job-id": "job-2"}, "c2", "s", "ten")
 	if err != nil {
-		t.Fatalf("job-wait failed: %v", err)
+		t.Fatalf("job-output failed: %v", err)
 	}
 	if strings.Contains(strings.ToLower(got.Content), "output unavailable") {
 		t.Fatalf("a job that printed nothing was reported as a read failure: %q", got.Content)
-	}
-	if dataOf(t, got.Data)["outputError"] != nil {
-		t.Fatalf("a silent job carries an outputError: %+v", got.Data)
 	}
 }
 

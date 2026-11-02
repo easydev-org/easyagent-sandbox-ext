@@ -21,6 +21,8 @@ import (
 	"github.com/easydev-org/easyagent-sandbox-ext/internal/uiapi"
 	"connectrpc.com/connect/v2/connecthttp"
 
+	"github.com/easydev-org/easybus-sdk/job"
+
 	"github.com/easydev-org/easyagent-sandbox-ext/internal/config"
 )
 
@@ -97,9 +99,26 @@ func main() {
 
 	var ext *extension.Extension
 	cache := sandbox.NewClientCache(16)
+	/**
+	 * THE SHARED JOB LIST, AND THE SWEEPER THAT FINISHES IT.
+	 *
+	 * The registry is what `sandbox-job-start` writes to when a command outlives its call; the
+	 * sweeper is what records a job as lost when THIS PROCESS stops renewing it. Both are needed
+	 * for the abstraction to hold: without the registry a background job is an id nobody can look
+	 * up, and without the sweeper a crashed extension leaves its jobs reading "running" until their
+	 * TTL elapses and they vanish — which is the one outcome the whole design is arranged against.
+	 *
+	 * THE SWEEPER HERE CLEANS UP AFTER OTHER EXTENSIONS TOO. It watches the whole bucket, not just
+	 * this extension's keys, because every extension runs the same code: whichever process is still
+	 * alive is the one that notices.
+	 */
+	jobs := job.NewRegistry(bus)
+	go job.NewSweeper(jobs).Run(context.Background())
+
 	handlers := tools.Registry(tools.Deps{
 		Cache: cache,
 		Bus:   bus,
+		Jobs:  jobs,
 		GetConfig: func(name, session, tenant string) any {
 			if ext == nil {
 				return nil
@@ -111,6 +130,26 @@ func main() {
 				return ""
 			}
 			return ext.GetSessionVariable(context.Background(), tenant, "agent", session, "locale", "")
+		},
+		/**
+		 * THE WAKE, AND WHY IT IS A CLOSURE OVER `ext`.
+		 *
+		 * The extension is built after this struct — it needs the tool specs, which are built from
+		 * this — so the publisher cannot be captured by value. It captures the VARIABLE, and reads
+		 * it when a job ends, which is always after start-up has finished. The nil check is for the
+		 * window where that is not yet true: a job cannot end before the extension exists, but a
+		 * closure that dereferences blindly would be one refactor away from a panic that takes the
+		 * whole process down at three in the morning.
+		 *
+		 * "trigger" RATHER THAN "event": a job finishing is news the conversation has to act on, and
+		 * an `event` would sit in the mailbox unread until something else woke the session.
+		 */
+		NotifyJobDone: func(ctx context.Context, tenant, session, jobID, title string, state job.State, exit *int) error {
+			if ext == nil {
+				return nil
+			}
+			return ext.PublishMailboxEvent(ctx, tenant, session, "trigger",
+				tools.NewMailboxPayload(jobID, title, state, exit), "sandbox")
 		},
 	})
 

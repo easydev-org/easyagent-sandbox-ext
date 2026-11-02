@@ -16,12 +16,26 @@ import (
 // maxOutputLines caps a rendered job-output window.
 const maxOutputLines = 1000
 
-// waitForJob polls JobWait in <=600s slices until the job leaves "running" or
-// the budget expires (the worker blocks server-side up to its own cap).
+/**
+ * waitForJob polls JobWait until the job leaves "running" or the budget expires.
+ *
+ * A BUDGET OF ZERO MEANS "UNTIL IT FINISHES", and that has to be its own case rather than a
+ * deadline in the past. `time.Now().Add(0)` is a deadline that has already passed, so the loop
+ * returned on its first pass with the state still "running" — a follower waiting for a background
+ * job would have stopped the moment it started looking.
+ *
+ * THE ERROR IS REPORTED, NOT FOLDED INTO "failed". A worker that cannot be reached has not told us
+ * anything about the job; answering "failed" invents a death. The caller here is the follower, and
+ * what it does with an unreachable worker is different from what it does with a failed command.
+ */
 func waitForJob(ctx context.Context, cl sandbox.WorkerClient, jobID string, budget time.Duration) (state string, code int32) {
+	unbounded := budget <= 0
 	deadline := time.Now().Add(budget)
 	for {
-		remaining := time.Until(deadline)
+		remaining := 600 * time.Second
+		if !unbounded {
+			remaining = time.Until(deadline)
+		}
 		slice := remaining
 		if slice > 600*time.Second {
 			slice = 600 * time.Second
@@ -31,12 +45,17 @@ func waitForJob(ctx context.Context, cl sandbox.WorkerClient, jobID string, budg
 		}
 		res, err := cl.JobWait(ctx, &workerv1.JobWaitRequest{JobId: jobID, TimeoutMs: int32(slice.Milliseconds())})
 		if err != nil {
+			// THE CONTEXT ENDING IS NOT THE JOB ENDING. A cancelled wait says nothing about the work,
+			// so it reports the last known state rather than a terminal one.
+			if ctx.Err() != nil {
+				return "running", 0
+			}
 			return "failed", -1
 		}
 		if res.GetState() != "running" {
 			return res.GetState(), res.GetExitCode()
 		}
-		if time.Now().After(deadline) {
+		if !unbounded && time.Now().After(deadline) {
 			return res.GetState(), res.GetExitCode()
 		}
 	}
@@ -176,29 +195,28 @@ func (t *toolset) jobStart(ctx context.Context, args map[string]any, callID, ses
 	}
 	state, code := waitForJob(ctx, cl, jobID, time.Duration(timeoutS)*time.Second)
 	if state == "running" {
-		// Still going: hand back the id and whatever it has produced. This is NOT a
-		// failure — the command is running and its output keeps streaming.
+		// STILL GOING: hand back the id and let a separate call wait for it.
 		//
-		// A failed read IS reported: the job state is still conveyed (the Data fields
-		// below carry it), but the text says the output could not be fetched rather than
-		// showing an empty body that reads as "this command printed nothing".
+		// THIS TOOL NO LONGER WAITS AS LONG AS IT COULD. It used to sit here for ten seconds and
+		// then report the same thing, which meant every background command cost ten seconds of a
+		// turn before the caller learned it was slow. Starting is what this tool knows how to do;
+		// waiting is a question about a job that already exists, and `job-wait` answers it.
+		//
+		// IT REGISTERS THE JOB FIRST, and that is not optional: the id in the reply is only useful
+		// if another tool can look it up, so a registry that is missing means the reader would get
+		// an id nobody can resolve.
+		t.trackJob(ctx, cl, s, jobID, command, session, tenant, callID)
 		text, _, rerr := renderOutput(ctx, cl, jobID, 0, 200, "all")
 		if rerr != nil {
 			text = outputUnavailableNote(t, session, tenant, rerr)
 		}
 		return extension.ToolResultData{
-			// The status goes LAST, after the output.
-			//
-			// Output is what the caller asked for and what keeps growing as the job
-			// runs; a status line pinned to the top would be pushed further away with
-			// every new line, so the reader would have to scroll up past the answer to
-			// find out whether it had finished. Trailing status reads like a shell
-			// prompt after its output.
+			// The status goes LAST, after the output — a status line pinned to the top would be
+			// pushed further away with every new line, so a reader would scroll past the answer to
+			// find out whether it had finished. Trailing status reads like a shell prompt.
 			Content: strings.TrimRight(text, "\n") + "\n" + jobStatusLine(t, session, tenant, jobID, state, code, timeoutS),
 			Data: map[string]any{
 				"jobId": jobID, "state": state, "timeoutSec": timeoutS,
-				// The panel opens ON THIS JOB: the caller just waited for it, and making them find it
-				// again would waste the wait they already did.
 				"view": jobView(s.Name, jobID),
 			},
 		}, nil
@@ -301,45 +319,6 @@ func (t *toolset) jobOutput(ctx context.Context, args map[string]any, callID, se
 	}, nil
 }
 
-func (t *toolset) jobWait(ctx context.Context, args map[string]any, callID, session, tenant string) (extension.ToolResultData, error) {
-	s, err := t.resolve(args, session, tenant)
-	if err != nil {
-		return extension.ToolResultData{}, err
-	}
-	jobID := argStr(args, "job-id")
-	if jobID == "" {
-		return extension.ToolResultData{}, &extension.TypedError{Code: easybus.ToolResultErrorCodeInvalidArgument, Message: "job-id is required"}
-	}
-	// Default 60s, capped at 90s (clamped, not reset).
-	timeoutS := clampInt(args, "timeout", 60, 90)
-	cl := t.deps.Cache.Worker(ep(s))
-	state, code := waitForJob(ctx, cl, jobID, time.Duration(timeoutS)*time.Second)
-	text, _, rerr := renderOutput(ctx, cl, jobID, -200, 0, "all")
-	if rerr != nil {
-		// The job's STATE is known and useful, so the tool still answers — but it must not
-		// answer with an empty body next to "done", which is indistinguishable from a
-		// command that printed nothing. Report the read failure in its place.
-		return extension.ToolResultData{
-			Content: i18n.T(t.locale(session, tenant), i18n.MsgJobDone,
-				i18n.Params{"id": jobID, "state": state, "code": fmt.Sprintf("%d", code)}) +
-				"\n" + outputUnavailableNote(t, session, tenant, rerr),
-			Data: map[string]any{
-				"jobId": jobID, "state": state, "exitCode": code, "outputError": rerr.Error(),
-				"view": jobView(s.Name, jobID),
-			},
-		}, nil
-	}
-	// THE INTERMEDIATE STREAMS ARE GONE, for the reason given in jobOutput: the engine no longer
-	// decomposes a script, so there is nothing between the program and its own output.
-	head := i18n.T(t.locale(session, tenant), i18n.MsgJobDone, i18n.Params{"id": jobID, "state": state, "code": fmt.Sprintf("%d", code)})
-	return extension.ToolResultData{
-		Content: head + "\n" + text,
-		Data: map[string]any{
-			"jobId": jobID, "state": state, "exitCode": code,
-			"view": jobView(s.Name, jobID),
-		},
-	}, nil
-}
 
 func (t *toolset) jobKill(ctx context.Context, args map[string]any, callID, session, tenant string) (extension.ToolResultData, error) {
 	s, err := t.resolve(args, session, tenant)
@@ -359,26 +338,3 @@ func (t *toolset) jobKill(ctx context.Context, args map[string]any, callID, sess
 	return extension.ToolResultData{Content: fmt.Sprintf("killed %s", jobID)}, nil
 }
 
-func (t *toolset) jobList(ctx context.Context, args map[string]any, callID, session, tenant string) (extension.ToolResultData, error) {
-	s, err := t.resolve(args, session, tenant)
-	if err != nil {
-		return extension.ToolResultData{}, err
-	}
-	res, err := t.deps.Cache.Worker(ep(s)).ListJobs(ctx, &workerv1.ListJobsRequest{Limit: int32(argInt(args, "limit", 50))})
-	if err != nil {
-		return extension.ToolResultData{}, &extension.TypedError{Code: easybus.ToolResultErrorCodeRetryable, Message: fmt.Sprintf("list-jobs: %v", err)}
-	}
-	lines := make([]string, 0, len(res.GetJobs()))
-	for _, j := range res.GetJobs() {
-		lines = append(lines, fmt.Sprintf("%s %s exit=%d %s", j.GetId(), j.GetState(), j.GetExitCode(), j.GetCommand()))
-	}
-	return extension.ToolResultData{
-		Content: strings.Join(lines, "\n"),
-		Data: map[string]any{
-			"jobs": res.GetJobs(),
-			// A listing points at the MACHINE, not at one job: the reader has just been shown a list,
-			// and the panel's job rail is that same list, live.
-			"view": sandboxView(s.Name),
-		},
-	}, nil
-}

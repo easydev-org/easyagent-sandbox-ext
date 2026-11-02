@@ -134,34 +134,6 @@ tools:
             zh: "all | stdout | stderr。"
       required: [job-id]
     required_config: [sandboxes]
-  - name: sandbox-job-wait
-    description: >-
-      Wait up to `timeout` seconds (default 60, max 90) for a job to finish; returns
-      its state and the tail of its output.
-    descriptions:
-      zh: >-
-        最多等待 `timeout` 秒（默认 60，最大 90）等待任务结束；返回状态与尾部输出。
-    input_schema:
-      type: object
-      properties:
-        job-id:
-          type: string
-          description: "The job id."
-          descriptions:
-            zh: "任务 id。"
-        timeout:
-          type: integer
-          description: "Seconds to wait (default 60, max 90)."
-          descriptions:
-            zh: "等待秒数（默认 60，最大 90）。"
-        intermediate:
-          type: boolean
-          description: >-
-            Append the intermediate pipeline streams (default true).
-          descriptions:
-            zh: 附带管道的中间流（默认 true）。
-      required: [job-id]
-    required_config: [sandboxes]
   - name: sandbox-job-kill
     description: >-
       Kill a job's whole process tree.
@@ -179,52 +151,6 @@ tools:
       required: [job-id]
     required_config: [sandboxes]
     requires: [exec]
-  - name: sandbox-job-list
-    description: >-
-      List recent jobs (id/state/exit/command).
-    descriptions:
-      zh: >-
-        列出最近的任务（id/状态/退出码/命令）。
-    input_schema:
-      type: object
-      properties:
-        limit:
-          type: integer
-          description: "Max jobs (default 50)."
-          descriptions:
-            zh: "最大任务数（默认 50）。"
-      required: []
-    required_config: [sandboxes]
-  - name: sandbox-job-stdin
-    description: >-
-      Write to a running job's stdin, optionally closing it. Needed for any
-      interactive command (`read`, a REPL, a prompt) — otherwise it can only be
-      started and then time out.
-    descriptions:
-      zh: >-
-        向运行中任务的标准输入写入，可选择关闭。交互式命令（`read`、REPL、提示符）必需——
-        否则只能启动然后超时。
-    input_schema:
-      type: object
-      properties:
-        job-id:
-          type: string
-          description: "The job id."
-          descriptions:
-            zh: "任务 id。"
-        data:
-          type: string
-          description: "Text to write."
-          descriptions:
-            zh: "要写入的文本。"
-        close:
-          type: boolean
-          description: "Close stdin after writing (signals EOF)."
-          descriptions:
-            zh: "写完后关闭标准输入（表示 EOF）。"
-      required: [job-id]
-    required_config: [sandboxes]
-    namespace: jobs
   - name: sandbox-file-read
     description: >-
       Read a text file (line-numbered). Binary files are rejected.
