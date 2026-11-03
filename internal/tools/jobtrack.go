@@ -6,26 +6,32 @@ import (
 
 	"github.com/easydev-org/easyagent-sandbox-ext/internal/config"
 	"github.com/easydev-org/easyagent-sandbox-ext/internal/sandbox"
-	"github.com/easydev-org/easybus-sdk/job"
 )
 
 // Kind is this extension's word for the jobs it runs.
 //
-// IT IS THE FILTER A CLIENT USES. A panel listing "sandbox-job" gets this extension's work and
-// nothing else, which is why the value is a constant here rather than a string chosen at each call
-// site: two spellings of it would be two categories.
+// IT PREFIXES THE ID the extension hands back, so a panel can tell which extension to ask about a job
+// it was told about. There is no shared registry to filter any more — `sandbox-job-*` tools take the
+// bare worker id — but the prefix stays on the id in messages, because a notification that names only
+// `392f82df` gives the reader nothing to search for.
 const Kind = "sandbox-job"
 
 /**
- * trackJob registers a running job and follows it to its end.
+ * trackJob follows a job to its end and wakes the conversation when it finishes.
  *
  * IT RETURNS IMMEDIATELY. The follow happens on its own goroutine, because the whole point of a
  * background job is that the call which started it is over.
  *
- * IT REPORTS WHETHER THE JOB IS LISTED. When it is not, the caller must not hand out the id: a job
- * nobody can look up is worse than a call that simply waited — the reader is told "it is still going,
- * watch it here" and there is no here. Returning the answer rather than logging it is what lets
- * `sandbox-job-start` act on that.
+ * THERE IS NO REGISTRY ANY MORE, AND THAT REMOVED A WHOLE KIND OF WRONG ANSWER. The extension used to
+ * write a copy of the job into a shared KV bucket with a heartbeat, and a sweeper marked the copy
+ * `lost` when the heartbeat stopped. For a process on a worker that is exactly right — the extension
+ * dying is the only way the heartbeat stops, and the process is gone with it. But the same mechanism
+ * was shared with work this extension does not own (a GitHub run survives the extension restarting),
+ * so it needed a `reconcile` hook to un-lie about it.
+ *
+ * NOW THE ONLY THING RECORDED IS "SOMEBODY IS WAITING". There is no state to disagree with the
+ * machine: the panel lists jobs by asking the worker, `sandbox-job-wait` waits on the worker, and this
+ * goroutine's whole purpose is the wake at the end.
  *
  * WHY A DEDICATED GOROUTINE PER JOB RATHER THAN A SWEEPING LOOP: `waitForJob` blocks on the worker's
  * own long-poll, so a loop would serialise jobs behind one another — ten builds would take ten
@@ -36,50 +42,16 @@ func (t *toolset) trackJob(
 	ctx context.Context, cl sandbox.WorkerClient, s config.Sandbox,
 	jobID, command, session, tenant, callID string,
 ) bool {
-	if t.deps.Jobs == nil {
-		// NO REGISTRY, NO BACKGROUND JOB. Reporting one would hand the caller an id that no other
-		// tool can resolve, which is worse than a call that simply waited.
-		slog.WarnContext(ctx, "sandbox: no job registry; the job will not be listed", "svc", "sandbox-ext", "job", jobID)
-		return false
-	}
+	// ONE LINE AT REGISTRATION, so "did the job start following" is answerable from the log without
+	// inferring it from an absence of later messages.
+	slog.InfoContext(ctx, "sandbox: following job", "svc", "sandbox-ext", "job", Kind+"."+jobID, "session", session)
 
 	/**
-	 * THE JOB'S IDENTITY CARRIES ITS CATEGORY, so a client can filter by kind without consulting a
-	 * second list: "sandbox-job.<worker id>". The prefix also makes the id unambiguous across
-	 * extensions, which the key layout relies on.
-	 */
-	id := Kind + "." + jobID
-	handle, err := t.deps.Jobs.Start(ctx, job.Entry{
-		ID:    id,
-		Kind:  Kind,
-		Title: command,
-		ExtID: "sandbox",
-		// THE TENANT IS THE FIRST KEY SEGMENT, and an entry without it cannot be keyed correctly:
-		// a job written under the wrong tenant registers, renews and finishes, and the list that
-		// asks for this conversation never sees it.
-		Tenant:    tenant,
-		Session:   session,
-		ToolUseID: callID,
-		// A SANDBOX JOB IS CANCELABLE: the worker owns the process and answers JobKill. `Finish`
-		// clears this on the way out, so a reader never has to check the state to know whether a
-		// cancel button would do anything.
-		CancelMode: job.CancelKill,
-	})
-	if err != nil {
-		slog.WarnContext(ctx, "sandbox: cannot register job", "svc", "sandbox-ext", "job", jobID, "err", err)
-		return false
-	}
-	// ONE LINE AT REGISTRATION, so "did the job reach the list" is answerable without inferring it
-	// from an absence of later messages.
-	slog.InfoContext(ctx, "sandbox: job registered", "svc", "sandbox-ext", "job", id, "session", session)
-
-	/**
-	 * THE HEARTBEAT OUTLIVES THE CALL. `ctx` here belongs to the tool call, which ends as soon as
-	 * this function returns — renewing on it would stop the heartbeat at exactly the moment the job
-	 * became interesting. `WithoutCancel` keeps the values (tenant, tracing) and drops the deadline.
+	 * THE FOLLOW OUTLIVES THE CALL. `ctx` here belongs to the tool call, which ends as soon as this
+	 * function returns — following on it would stop at exactly the moment the job became interesting.
+	 * `WithoutCancel` keeps the values (tenant, tracing) and drops the deadline.
 	 */
 	bg := context.WithoutCancel(ctx)
-	go handle.KeepAlive(bg)
 
 	go func() {
 		defer func() {
@@ -94,61 +66,35 @@ func (t *toolset) trackJob(
 		state, code, ok := waitForJob(bg, cl, jobID, 0)
 		if !ok {
 			/**
-			 * THE WORKER STOPPED ANSWERING, and the job is left as it was.
+			 * THE WORKER STOPPED ANSWERING, SO NOTHING IS REPORTED.
 			 *
-			 * Recording an ending here would be a lie about work that may still be happening — the
-			 * process is on a machine, and this extension losing contact with it does not stop it.
-			 * So the entry stays `running` with a stale `RenewedAt`, the heartbeat below is allowed
-			 * to stop, and the SWEEPER records it as lost after the staleness threshold.
-			 *
-			 * THAT ROUTE EXISTS PRECISELY FOR THIS. Marking it lost here would pre-empt the sweeper
-			 * while pretending this process knows more than it does.
+			 * There is no entry to leave running and no sweeper to correct it — the record is gone
+			 * with the registry. The conversation simply is not woken, which is the honest outcome:
+			 * a wake saying "the job finished" would be a fabricated ending, and one saying "it was
+			 * lost" would be a fabricated death. `sandbox-job-wait` can still ask the worker later.
 			 */
+			slog.WarnContext(bg, "sandbox: job follower stopped, outcome unknown",
+				"svc", "sandbox-ext", "job", jobID)
 			return
 		}
-
-		/**
-		 * THE WORKER'S VERDICT IS MAPPED, NOT COPIED, AND THE EXIT CODE IS NOT CONSULTED.
-		 *
-		 * A non-zero exit is still `done`: the job ended, and the code says how it ended. Deciding
-		 * "failed" here would put this process's opinion of the exit code into a field every reader
-		 * then trusts — and the opinion is unknowable from here. `grep` exits 1 for a clean "no
-		 * match"; a caller wanting a match reads that as failure, a caller running a search does not.
-		 */
-		var final job.State
-		switch state {
-		case "running":
-			// The budget was unlimited, so "running" here means the CALLER's context ended, not the
-			// job. Recording an ending would be a lie about work that is still happening.
+		// The caller's context ended, not the job. Nothing to report yet.
+		if state == "running" {
 			return
-		case "killed":
-			final = job.StateCancelled
-		default:
-			final = job.StateDone
 		}
 
 		var exit *int
-		if state != "running" {
-			c := int(code)
-			exit = &c
-		}
-		if err := handle.Finish(bg, final, exit, ""); err != nil {
-			slog.WarnContext(bg, "sandbox: cannot record job end", "svc", "sandbox-ext", "job", jobID, "err", err)
-		}
+		c := int(code)
+		exit = &c
+
 		/**
-		 * THE WAKE IS SEPARATE FROM THE RECORD, and either can fail without the other mattering.
+		 * THE WAKE IS THE WHOLE POINT OF THIS GOROUTINE NOW.
 		 *
-		 * The KV write is what a panel reads; the mailbox message is what makes the conversation
-		 * look. A job whose state was recorded but whose wake was lost still shows as finished;
-		 * one whose wake arrived but whose write failed still gets read. Insisting both succeed
-		 * would mean retrying a notification the reader may already have seen.
-		 *
-		 * IT FIRES WHETHER OR NOT ANYBODY IS WAITING. A `job-wait` call in flight watches the
-		 * registry and will already have returned its own answer, so this is a second copy — and
-		 * that is the accepted cost of the common case, which is a job nobody waited for.
+		 * The state travels as the WORKER'S OWN WORD — `done`, `killed` — rather than a shared enum,
+		 * because there is no shared vocabulary left to translate into. A reader that wants the
+		 * nuance reads the exit code and the output, which are the two things that carry it.
 		 */
 		if t.deps.NotifyJobDone != nil {
-			if err := t.deps.NotifyJobDone(bg, tenant, session, id, command, final, exit); err != nil {
+			if err := t.deps.NotifyJobDone(bg, tenant, session, Kind+"."+jobID, command, state, exit); err != nil {
 				slog.WarnContext(bg, "sandbox: cannot wake the conversation", "svc", "sandbox-ext", "job", jobID, "err", err)
 			}
 		}

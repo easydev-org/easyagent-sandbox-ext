@@ -21,7 +21,6 @@ import (
 	"github.com/easydev-org/easyagent-sandbox-ext/internal/tools"
 	"github.com/easydev-org/easyagent-sandbox-ext/internal/uiapi"
 
-	"github.com/easydev-org/easybus-sdk/job"
 
 	"github.com/easydev-org/easyagent-sandbox-ext/internal/config"
 )
@@ -99,26 +98,9 @@ func main() {
 
 	var ext *extension.Extension
 	cache := sandbox.NewClientCache(16)
-	/**
-	 * THE SHARED JOB LIST, AND THE SWEEPER THAT FINISHES IT.
-	 *
-	 * The registry is what `sandbox-job-start` writes to when a command outlives its call; the
-	 * sweeper is what records a job as lost when THIS PROCESS stops renewing it. Both are needed
-	 * for the abstraction to hold: without the registry a background job is an id nobody can look
-	 * up, and without the sweeper a crashed extension leaves its jobs reading "running" until their
-	 * TTL elapses and they vanish — which is the one outcome the whole design is arranged against.
-	 *
-	 * THE SWEEPER HERE CLEANS UP AFTER OTHER EXTENSIONS TOO. It watches the whole bucket, not just
-	 * this extension's keys, because every extension runs the same code: whichever process is still
-	 * alive is the one that notices.
-	 */
-	jobs := job.NewRegistry(bus)
-	go job.NewSweeper(jobs).Run(context.Background())
-
 	handlers := tools.Registry(tools.Deps{
 		Cache: cache,
 		Bus:   bus,
-		Jobs:  jobs,
 		GetConfig: func(name, session, tenant string) any {
 			if ext == nil {
 				return nil
@@ -144,7 +126,7 @@ func main() {
 		 * "trigger" RATHER THAN "event": a job finishing is news the conversation has to act on, and
 		 * an `event` would sit in the mailbox unread until something else woke the session.
 		 */
-		NotifyJobDone: func(ctx context.Context, tenant, session, jobID, title string, state job.State, exit *int) error {
+		NotifyJobDone: func(ctx context.Context, tenant, session, jobID, title string, state string, exit *int) error {
 			if ext == nil {
 				return nil
 			}
