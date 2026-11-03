@@ -74,6 +74,7 @@ func Registry(d Deps) map[string]Handler {
 		"list-sandboxes":     t.listSandboxes,
 		"sandbox-info":       t.info,
 		"sandbox-job-start":  t.jobStart,
+		"sandbox-job-wait":   t.jobWait,
 		"sandbox-job-output": t.jobOutput,
 		"sandbox-job-cancel": t.jobCancel,
 		// WAITING AND LISTING ARE THE AGENT'S NOW, NOT THIS EXTENSION'S.
