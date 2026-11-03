@@ -96,8 +96,8 @@ func Registry(d Deps) map[string]Handler {
 		// replaced the old engine has no stdin to write to. A job is a program that runs to completion
 		// and reports; there is nothing on the other end of a pipe any more, so a tool offering one
 		// would accept a call and fail it.
-		"sandbox-file-read":   t.fileRead,
-		"sandbox-file-list":   t.fileList,
+		"sandbox-file-read": t.fileRead,
+		"sandbox-file-list": t.fileList,
 		// FOUR TOOLS BECAME ONE. file-write, file-delete, file-move and file-copy did the same thing
 		// four ways — each with its own argument names and its own way of being wrong — and a caller had
 		// four chances to pick the wrong one. sandbox-file-patch says what the change IS, in the grammar

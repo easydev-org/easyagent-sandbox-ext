@@ -11,8 +11,8 @@ import (
 	"github.com/easydev-org/easyagent-sandbox-ext/internal/i18n"
 	"github.com/easydev-org/easyagent-sandbox-ext/internal/sandbox"
 	easybus "github.com/easydev-org/easybus-sdk"
-	"github.com/easydev-org/easybus-sdk/job"
 	"github.com/easydev-org/easybus-sdk/extension"
+	"github.com/easydev-org/easybus-sdk/job"
 )
 
 // maxOutputLines caps a rendered job-output window.
@@ -354,7 +354,6 @@ func (t *toolset) jobOutput(ctx context.Context, args map[string]any, callID, se
 	}, nil
 }
 
-
 /**
  * jobCancel stops a running command and says so to the shared job list.
  *
@@ -398,4 +397,3 @@ func (t *toolset) jobCancel(ctx context.Context, args map[string]any, callID, se
 	}
 	return extension.ToolResultData{Content: fmt.Sprintf("cancelled %s", jobID)}, nil
 }
-

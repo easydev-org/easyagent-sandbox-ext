@@ -5,8 +5,8 @@
 package main
 
 import (
-	_ "embed"
 	"context"
+	_ "embed"
 	"log/slog"
 	"net/http"
 	"os"
@@ -16,10 +16,10 @@ import (
 	"github.com/easydev-org/easybus-sdk/manifest"
 	"github.com/easydev-org/easybus-sdk/transport/nats"
 
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/easydev-org/easyagent-sandbox-ext/internal/sandbox"
 	"github.com/easydev-org/easyagent-sandbox-ext/internal/tools"
 	"github.com/easydev-org/easyagent-sandbox-ext/internal/uiapi"
-	"connectrpc.com/connect/v2/connecthttp"
 
 	"github.com/easydev-org/easybus-sdk/job"
 
