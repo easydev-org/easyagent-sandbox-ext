@@ -321,6 +321,83 @@ func followEnabled(args map[string]any) bool {
 	return !ok || b
 }
 
+/**
+ * jobWait blocks until a job ends or the budget expires, then returns its output.
+ *
+ * THIS IS THE EXTENSION'S OWN WAIT, AND IT IS WHY `job-wait` COULD BE REMOVED. The generic tool
+ * answered from a KV copy of the job that the extension wrote; this one asks the WORKER, which is the
+ * only thing that knows whether the process is still alive. The generic one could say a run was
+ * `lost` while it was still going. This one cannot be wrong about that, because it is asking.
+ *
+ * IT NEVER FAILS ON A TIMEOUT. Reaching the cap means "still running", which is an answer — the reply
+ * says so and the caller may ask again, or wait for the completion notice.
+ *
+ * A WORKER THAT CANNOT BE REACHED IS AN ERROR, NOT A STATE. It has told us nothing about the job, and
+ * `failed` would invent a death. See waitForJob's third return value.
+ */
+func (t *toolset) jobWait(ctx context.Context, args map[string]any, callID, session, tenant string) (extension.ToolResultData, error) {
+	s, err := t.resolve(args, session, tenant)
+	if err != nil {
+		return extension.ToolResultData{}, err
+	}
+	jobID := argStr(args, "job-id")
+	if jobID == "" {
+		return extension.ToolResultData{}, &extension.TypedError{Code: easybus.ToolResultErrorCodeInvalidArgument, Message: "job-id is required"}
+	}
+	// Default 60s, capped at 90s (clamped, not reset). Longer than job-start's budget because a
+	// caller asking to wait has already decided this is worth blocking a turn on.
+	timeoutS := clampInt(args, "timeout", 60, 90)
+	cl := t.deps.Cache.Worker(ep(s))
+	state, code, ok := waitForJob(ctx, cl, jobID, time.Duration(timeoutS)*time.Second)
+	if !ok {
+		return extension.ToolResultData{}, &extension.TypedError{
+			Code: easybus.ToolResultErrorCodeRetryable,
+			Message: fmt.Sprintf("job %s: the worker stopped answering, so its outcome is unknown "+
+				"(it may still be running; try again)", jobID),
+		}
+	}
+
+	head := jobStatusLine(t, session, tenant, jobID, state, code, timeoutS)
+
+	/**
+	 * THE OUTPUT WINDOW DEPENDS ON HOW IT ENDED.
+	 *
+	 * FINISHED: the whole buffer (start 0, end 0), because a caller that waited for an ending wants
+	 * the result, and truncating it now would make the wait pointless.
+	 *
+	 * STILL RUNNING: THE LAST 200 LINES, and `-200` is the worker's own convention for "count back
+	 * from the end" — asking for 0..200 would return the FIRST 200 lines of a job that may have
+	 * printed thousands, which is the least useful part of a running build. The caller is told it is
+	 * still going and can wait again or read more with sandbox-job-output.
+	 */
+	var text string
+	var rerr error
+	if state == "running" {
+		text, _, rerr = renderOutput(ctx, cl, jobID, -200, 0, "all")
+	} else {
+		text, _, rerr = renderOutput(ctx, cl, jobID, 0, 0, "all")
+	}
+
+	if rerr != nil {
+		// THE STATE IS KNOWN AND USEFUL, so the tool still answers — but it must not put an empty body
+		// beside "done", which reads as a command that printed nothing.
+		return extension.ToolResultData{
+			Content: head + "\n" + outputUnavailableNote(t, session, tenant, rerr),
+			Data: map[string]any{
+				"jobId": jobID, "state": state, "exitCode": code, "outputError": rerr.Error(),
+				"view": jobView(s.Name, jobID),
+			},
+		}, nil
+	}
+	return extension.ToolResultData{
+		Content: head + "\n" + strings.TrimRight(text, "\n"),
+		Data: map[string]any{
+			"jobId": jobID, "state": state, "exitCode": code,
+			"view": jobView(s.Name, jobID),
+		},
+	}, nil
+}
+
 func (t *toolset) jobOutput(ctx context.Context, args map[string]any, callID, session, tenant string) (extension.ToolResultData, error) {
 	s, err := t.resolve(args, session, tenant)
 	if err != nil {

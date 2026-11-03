@@ -29,8 +29,8 @@ var Catalog = easybusi18n.Catalog{
 		"zh": "未知的沙箱 {target}（已知：{known}）",
 	},
 	MsgJobStill: {
-		"en": "job {id} still running after {timeout}s; use job-output/job-wait",
-		"zh": "任务 {id} 在 {timeout}s 后仍在运行；请用 job-output/job-wait",
+		"en": "job {id} still running after {timeout}s; use sandbox-job-wait to wait for it, or sandbox-job-output to read what it has printed",
+		"zh": "任务 {id} 在 {timeout}s 后仍在运行；请用 sandbox-job-wait 继续等待，或用 sandbox-job-output 读取已产生的输出",
 	},
 	MsgJobDone: {
 		"en": "job {id} {state} (exit {code})",
