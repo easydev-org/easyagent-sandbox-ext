@@ -1,10 +1,6 @@
 package tools
 
-import (
-	"fmt"
-
-	"github.com/easydev-org/easybus-sdk/job"
-)
+import "fmt"
 
 /**
  * JobText renders the message a finished job leaves in the conversation.
@@ -18,20 +14,20 @@ import (
  * THE SHAPE IS THE ONE THE MODEL ALREADY KNOWS. `<job id=... state=...>` is what a tool result for
  * a finished job looks like, so a wake and a `job-wait` return are read the same way.
  */
-func JobText(jobID, title string, state job.State, exit *int) string {
+func JobText(jobID, title string, state string, exit *int) string {
 	exitAttr := ""
 	if exit != nil {
 		exitAttr = fmt.Sprintf(" exit=%q", fmt.Sprintf("%d", *exit))
 	}
 	how := ""
 	switch state {
-	case job.StateDone:
+	case "done":
 		// THE EXIT CODE CARRIES THE VERDICT, so this sentence does not. Saying "it failed" here
 		// would repeat a judgement the job deliberately does not make — see State's documentation.
 		how = "The job finished."
-	case job.StateCancelled:
+	case "killed":
 		how = "The job was stopped."
-	case job.StateLost:
+	case "lost":
 		// NOT A THING THIS EXTENSION PRODUCES — the sweeper writes it after this process is gone.
 		// Rendered anyway, because an extension that comes back to a job of its own must be able
 		// to describe it rather than printing an empty sentence.
@@ -58,7 +54,7 @@ func JobText(jobID, title string, state job.State, exit *int) string {
 // SNAKE_CASE because that is what the agent's WakePayload decodes; a mismatch silently falls back to
 // the mailbox row's own id, which is fresh on every delivery and so defeats the idempotence a derived
 // id exists for.
-func NewMailboxPayload(jobID, title string, state job.State, exit *int) map[string]any {
+func NewMailboxPayload(jobID, title string, state string, exit *int) map[string]any {
 	return map[string]any{
 		// DERIVED FROM THE JOB, not generated: a job has exactly one ending, so a wake about it
 		// should fold at most once no matter how many times it is delivered.

@@ -14,7 +14,6 @@ import (
 	easybus "github.com/easydev-org/easybus-sdk"
 	"github.com/easydev-org/easybus-sdk/bus"
 	"github.com/easydev-org/easybus-sdk/extension"
-	"github.com/easydev-org/easybus-sdk/job"
 )
 
 // Deps is what the tools need from the extension host.
@@ -36,14 +35,6 @@ type Deps struct {
 	// conversation. nil means "nobody is listening" and the reporter is skipped.
 	Progress func(ctx context.Context, callID string, p *easybus.ToolProgress)
 
-	/**
-	 * Jobs is the shared list a background job appears in.
-	 *
-	 * NIL MEANS NOBODY CAN SEE THE JOB, and the tools treat that as "do not background
-	 * anything": `sandbox-job-start` then keeps its old waiting behaviour, because a job
-	 * that returns an id no other tool can look up is worse than a call that waits.
-	 */
-	Jobs *job.Registry
 
 	/**
 	 * NotifyJobDone wakes the conversation a job belonged to.
@@ -53,10 +44,11 @@ type Deps struct {
 	 * through the tool-output stream, once through the mailbox — and would mean writing a second
 	 * truncation policy beside the one the agent already applies to tool results.
 	 *
-	 * NIL MEANS NO WAKE. A toolset built without it still records job state, so a panel that
-	 * watches the registry still sees the job end; only the conversation is not prodded.
+	 * THE STATE IS THE WORKER'S OWN WORD (`done`, `killed`), not a shared enum. There is no shared
+	 * vocabulary to translate into any more: the panel lists jobs by asking the worker, and this
+	 * message exists only to prod a conversation that is not watching.
 	 */
-	NotifyJobDone func(ctx context.Context, tenant, session, jobID, title string, state job.State, exit *int) error
+	NotifyJobDone func(ctx context.Context, tenant, session, jobID, title string, state string, exit *int) error
 }
 
 // Handler is one tool implementation.

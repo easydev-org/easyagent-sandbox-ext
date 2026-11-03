@@ -3,9 +3,7 @@ package tools
 import (
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/easydev-org/easybus-sdk/job"
 )
 
 /**
@@ -16,7 +14,7 @@ import (
 
 func TestJobTextNamesTheJobWithoutItsOutput(t *testing.T) {
 	exit := 0
-	got := JobText("sandbox-job.019abc", "cargo build", job.StateDone, &exit)
+	got := JobText("sandbox-job.019abc", "cargo build", "done", &exit)
 
 	// THE OUTPUT IS DELIBERATELY ABSENT. It is on the tool-output stream, and a `job-output` call
 	// reads it. Repeating it here would send the same bytes twice and would need a second
@@ -35,7 +33,7 @@ func TestJobTextNamesTheJobWithoutItsOutput(t *testing.T) {
 
 	// IT MUST NOT CALL A NON-ZERO EXIT A FAILURE. The exit code carries the verdict; the job
 	// deliberately does not make one — `grep` exiting 1 is a clean "no match".
-	failed := JobText("j", "grep x", job.StateDone, &exit)
+	failed := JobText("j", "grep x", "done", &exit)
 	if strings.Contains(strings.ToLower(failed), "failed") {
 		t.Errorf("a done job must not be described as failed:\n%s", failed)
 	}
@@ -44,7 +42,7 @@ func TestJobTextNamesTheJobWithoutItsOutput(t *testing.T) {
 func TestJobTextHandlesAJobWithNoExitCode(t *testing.T) {
 	// A cancelled or lost job has no exit code, and the text must not render "exit=0" for it —
 	// that would invent a success.
-	got := JobText("j", "build", job.StateLost, nil)
+	got := JobText("j", "build", "lost", nil)
 	if strings.Contains(got, "exit=") {
 		t.Errorf("a job with no exit code rendered one:\n%s", got)
 	}
@@ -61,8 +59,8 @@ func TestJobTextHandlesAJobWithNoExitCode(t *testing.T) {
  */
 func TestMailboxPayloadIdIsDerivedFromTheJob(t *testing.T) {
 	exit := 1
-	a := NewMailboxPayload("sandbox-job.019abc", "make", job.StateDone, &exit)
-	b := NewMailboxPayload("sandbox-job.019abc", "make", job.StateDone, &exit)
+	a := NewMailboxPayload("sandbox-job.019abc", "make", "done", &exit)
+	b := NewMailboxPayload("sandbox-job.019abc", "make", "done", &exit)
 
 	// A MAP, NOT A STRUCT: `PublishMailboxEvent` runs the payload through structpb, which cannot take
 	// a Go struct and folds the failure to null — a delivered wake with no body.
@@ -83,31 +81,6 @@ func TestMailboxPayloadIdIsDerivedFromTheJob(t *testing.T) {
 	text, _ := a["text"].(string)
 	if strings.TrimSpace(text) == "" {
 		t.Fatal("a wake with no text would fold an empty message into the conversation")
-	}
-}
-
-/**
- * THE TIMING THAT MAKES A LOST JOB RECORDABLE.
- *
- * The sweeper judges an entry that is still present but stale. If the running TTL were shorter than
- * the staleness threshold, a stalled job would expire before anything could look at it and would
- * disappear rather than being recorded as lost — the one outcome this design exists to prevent.
- *
- * DUPLICATED FROM THE SDK'S OWN TEST ON PURPOSE: this extension configures its registry, and a
- * change here that broke the relationship would only show up in production otherwise.
- */
-func TestRegistryDefaultsKeepLostJobsRecordable(t *testing.T) {
-	r := job.NewRegistry(nil)
-	if r.RunningTTL <= r.StaleAfter {
-		t.Fatalf("running TTL %v must exceed stale-after %v, or a stalled job vanishes instead of "+
-			"being recorded as lost", r.RunningTTL, r.StaleAfter)
-	}
-	if r.StaleAfter < 2*r.RenewEvery {
-		t.Fatalf("stale-after %v is under two renewal intervals (%v); one delayed call reads as death",
-			r.StaleAfter, 2*r.RenewEvery)
-	}
-	if r.DoneTTL != 24*time.Hour {
-		t.Fatalf("finished jobs are kept %v; the decision is 24h", r.DoneTTL)
 	}
 }
 

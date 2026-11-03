@@ -3,7 +3,6 @@ package tools
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 	"time"
 
@@ -12,7 +11,6 @@ import (
 	"github.com/easydev-org/easyagent-sandbox-ext/internal/sandbox"
 	easybus "github.com/easydev-org/easybus-sdk"
 	"github.com/easydev-org/easybus-sdk/extension"
-	"github.com/easydev-org/easybus-sdk/job"
 )
 
 // maxOutputLines caps a rendered job-output window.
@@ -379,21 +377,13 @@ func (t *toolset) jobCancel(ctx context.Context, args map[string]any, callID, se
 		return extension.ToolResultData{}, &extension.TypedError{Code: easybus.ToolResultErrorCodeInvalidArgument, Message: "job-id is required"}
 	}
 	if _, err := t.deps.Cache.Worker(ep(s)).JobKill(ctx, &workerv1.JobKillRequest{JobId: jobID}); err != nil {
-		// THE JOB LIST IS NOT TOUCHED ON FAILURE. The process is still running — recording
-		// `cancelled` would make the list disagree with the machine.
+		// A REFUSED KILL IS REPORTED. The process is still running, and saying otherwise would leave
+		// the reader with no reason to try again.
 		return extension.ToolResultData{}, &extension.TypedError{Code: easybus.ToolResultErrorCodeRetryable, Message: fmt.Sprintf("job-cancel: %v", err)}
 	}
-	if t.deps.Jobs != nil {
-		// THE JOB ID IN THE LIST CARRIES THIS EXTENSION'S PREFIX, so it is rebuilt rather than taken
-		// from the argument: a caller may pass the bare worker id, and the entry is under the
-		// prefixed one.
-		if e, found, gerr := t.deps.Jobs.Get(ctx, tenant, session, Kind+"."+jobID); gerr == nil && found {
-			e.State = job.StateCancelled
-			e.FinishedAt = time.Now().UnixMilli()
-			if perr := t.deps.Jobs.Put(ctx, e); perr != nil {
-				slog.WarnContext(ctx, "sandbox: cannot record cancellation", "svc", "sandbox-ext", "job", jobID, "err", perr)
-			}
-		}
-	}
+	// NOTHING ELSE TO RECORD. There is no shared entry to mark: the worker owns the process and this
+	// call has its answer, so a panel that asks the worker sees `killed` without anybody writing it
+	// down. The follower goroutine will also see it and wake the conversation, which is the one thing
+	// that still needs telling.
 	return extension.ToolResultData{Content: fmt.Sprintf("cancelled %s", jobID)}, nil
 }
