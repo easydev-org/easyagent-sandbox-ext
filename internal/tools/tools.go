@@ -35,7 +35,6 @@ type Deps struct {
 	// conversation. nil means "nobody is listening" and the reporter is skipped.
 	Progress func(ctx context.Context, callID string, p *easybus.ToolProgress)
 
-
 	/**
 	 * NotifyJobDone wakes the conversation a job belonged to.
 	 *
