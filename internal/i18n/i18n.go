@@ -8,14 +8,14 @@ import (
 
 // Message keys (typed; a typo is a compile error at the call site).
 const (
-	MsgNotConfigured          = "notConfigured"
-	MsgUnknownTarget          = "unknownTarget"
-	MsgJobStill               = "jobStillRunning"
-	MsgJobDone                = "jobDone"
-	MsgJobOutputUnavailable   = "jobOutputUnavailable"
-	MsgNoSandboxes            = "noSandboxes"
-	MsgUploaded               = "uploaded"
-	MsgDownloaded             = "downloaded"
+	MsgNotConfigured        = "notConfigured"
+	MsgUnknownTarget        = "unknownTarget"
+	MsgJobStill             = "jobStillRunning"
+	MsgJobDone              = "jobDone"
+	MsgJobOutputUnavailable = "jobOutputUnavailable"
+	MsgNoSandboxes          = "noSandboxes"
+	MsgUploaded             = "uploaded"
+	MsgDownloaded           = "downloaded"
 )
 
 // Catalog is the message table (open locale set: add a column per language).

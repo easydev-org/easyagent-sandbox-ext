@@ -332,7 +332,6 @@ type desktopTarget struct {
 	token  string
 }
 
-
 /**
  * desktopTarget resolves a verified claim.
  *

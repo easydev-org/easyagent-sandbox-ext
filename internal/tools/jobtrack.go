@@ -50,10 +50,10 @@ func (t *toolset) trackJob(
 	 */
 	id := Kind + "." + jobID
 	handle, err := t.deps.Jobs.Start(ctx, job.Entry{
-		ID:        id,
-		Kind:      Kind,
-		Title:     command,
-		ExtID:     "sandbox",
+		ID:    id,
+		Kind:  Kind,
+		Title: command,
+		ExtID: "sandbox",
 		// THE TENANT IS THE FIRST KEY SEGMENT, and an entry without it cannot be keyed correctly:
 		// a job written under the wrong tenant registers, renews and finishes, and the list that
 		// asks for this conversation never sees it.

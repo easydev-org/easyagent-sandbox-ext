@@ -92,7 +92,7 @@ func (t *toolset) filePatch(ctx context.Context, args map[string]any, callID, se
 			// answer: the caller either meant Update, or meant to delete first.
 			if _, rerr := cl.FileRead(ctx, &workerv1.FileReadRequest{Path: path}); rerr == nil {
 				return extension.ToolResultData{}, &extension.TypedError{
-					Code: easybus.ToolResultErrorCodeBusiness,
+					Code:    easybus.ToolResultErrorCodeBusiness,
 					Message: fmt.Sprintf("%s already exists; use `*** Update File:` to change it", path),
 				}
 			}

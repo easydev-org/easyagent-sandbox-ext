@@ -76,7 +76,6 @@ func (t *toolset) fileRead(ctx context.Context, args map[string]any, callID, ses
 	return extension.ToolResultData{Content: text, Data: map[string]any{"totalLines": res.GetTotalLines()}}, nil
 }
 
-
 func (t *toolset) fileList(ctx context.Context, args map[string]any, callID, session, tenant string) (extension.ToolResultData, error) {
 	s, err := t.resolve(args, session, tenant)
 	if err != nil {
@@ -98,6 +97,3 @@ func (t *toolset) fileList(ctx context.Context, args map[string]any, callID, ses
 	}
 	return extension.ToolResultData{Content: strings.Join(lines, "\n"), Data: map[string]any{"files": res.GetFiles(), "truncated": res.GetTruncated()}}, nil
 }
-
-
-
