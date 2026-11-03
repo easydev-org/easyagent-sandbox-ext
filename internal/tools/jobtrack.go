@@ -22,6 +22,11 @@ const Kind = "sandbox-job"
  * IT RETURNS IMMEDIATELY. The follow happens on its own goroutine, because the whole point of a
  * background job is that the call which started it is over.
  *
+ * IT REPORTS WHETHER THE JOB IS LISTED. When it is not, the caller must not hand out the id: a job
+ * nobody can look up is worse than a call that simply waited — the reader is told "it is still going,
+ * watch it here" and there is no here. Returning the answer rather than logging it is what lets
+ * `sandbox-job-start` act on that.
+ *
  * WHY A DEDICATED GOROUTINE PER JOB RATHER THAN A SWEEPING LOOP: `waitForJob` blocks on the worker's
  * own long-poll, so a loop would serialise jobs behind one another — ten builds would take ten
  * builds' worth of waiting in sequence. One follower per job costs a goroutine, which is the cheap
@@ -30,12 +35,12 @@ const Kind = "sandbox-job"
 func (t *toolset) trackJob(
 	ctx context.Context, cl sandbox.WorkerClient, s config.Sandbox,
 	jobID, command, session, tenant, callID string,
-) {
+) bool {
 	if t.deps.Jobs == nil {
 		// NO REGISTRY, NO BACKGROUND JOB. Reporting one would hand the caller an id that no other
 		// tool can resolve, which is worse than a call that simply waited.
 		slog.WarnContext(ctx, "sandbox: no job registry; the job will not be listed", "svc", "sandbox-ext", "job", jobID)
-		return
+		return false
 	}
 
 	/**
@@ -55,15 +60,14 @@ func (t *toolset) trackJob(
 		Tenant:    tenant,
 		Session:   session,
 		ToolUseID: callID,
-		// A SANDBOX JOB IS CANCELABLE WHILE IT RUNS: the worker owns the process and answers
-		// JobKill. The flag stays true after it ends — `Cancelable` describes the KIND of job, and
-		// a client that draws a cancel button for a finished one is looking at a state check it
-		// should have made anyway.
+		// A SANDBOX JOB IS CANCELABLE: the worker owns the process and answers JobKill. `Finish`
+		// clears this on the way out, so a reader never has to check the state to know whether a
+		// cancel button would do anything.
 		CancelMode: job.CancelKill,
 	})
 	if err != nil {
 		slog.WarnContext(ctx, "sandbox: cannot register job", "svc", "sandbox-ext", "job", jobID, "err", err)
-		return
+		return false
 	}
 	// ONE LINE AT REGISTRATION, so "did the job reach the list" is answerable without inferring it
 	// from an absence of later messages.
@@ -87,7 +91,21 @@ func (t *toolset) trackJob(
 		}()
 
 		// ZERO BUDGET MEANS "NO BUDGET": keep asking until the worker says it is over.
-		state, code := waitForJob(bg, cl, jobID, 0)
+		state, code, ok := waitForJob(bg, cl, jobID, 0)
+		if !ok {
+			/**
+			 * THE WORKER STOPPED ANSWERING, and the job is left as it was.
+			 *
+			 * Recording an ending here would be a lie about work that may still be happening — the
+			 * process is on a machine, and this extension losing contact with it does not stop it.
+			 * So the entry stays `running` with a stale `RenewedAt`, the heartbeat below is allowed
+			 * to stop, and the SWEEPER records it as lost after the staleness threshold.
+			 *
+			 * THAT ROUTE EXISTS PRECISELY FOR THIS. Marking it lost here would pre-empt the sweeper
+			 * while pretending this process knows more than it does.
+			 */
+			return
+		}
 
 		/**
 		 * THE WORKER'S VERDICT IS MAPPED, NOT COPIED, AND THE EXIT CODE IS NOT CONSULTED.
@@ -100,10 +118,8 @@ func (t *toolset) trackJob(
 		var final job.State
 		switch state {
 		case "running":
-			// The wait returned without a terminal state, which with an unlimited budget means the
-			// worker stopped answering. Recording an ending would be a lie about work that may still
-			// be happening, so this stays running and the heartbeat stops — the entry then ages out
-			// and the sweeper records it as lost, which is the honest outcome.
+			// The budget was unlimited, so "running" here means the CALLER's context ended, not the
+			// job. Recording an ending would be a lie about work that is still happening.
 			return
 		case "killed":
 			final = job.StateCancelled
@@ -137,4 +153,5 @@ func (t *toolset) trackJob(
 			}
 		}
 	}()
+	return true
 }
