@@ -21,15 +21,19 @@ func CloseWatchers() { watcher.CloseAll() }
 
 // jobWatcher relays a running job's output to the UI while the job runs.
 //
-// WHY it outlives the tool call: sandbox-job-start waits only a few seconds for a
-// command, and returns a job id if it is still running. The OUTPUT, though, keeps
-// arriving for as long as the command runs — minutes, potentially. Tying the relay
-// to the tool call would stop the stream at the exact moment the caller was told
-// "it is still going, watch it here".
+// THE RELAY OUTLIVES THE TOOL CALL TOO, and it has to for the same reason the job does: `job-start`
+// hands back an id while the command keeps printing. Tying the relay to the call would cut the
+// stream at the exact moment the caller was told "watch it here".
 //
-// So each watch gets its OWN lifetime (background context), and the set of live
-// watches is tracked so the extension can cancel them all on shutdown — otherwise
-// a stuck worker would leak a goroutine per job.
+// WHO RECEIVES IT IS NOT THE TURN. The frames go to `easybus.<tenant>.tool.progress.<callID>`, and
+// the agent's relay for that call has already stopped — it stops when the call returns. So these
+// frames are what a PANEL sees if it listens on that subject, and nothing at all otherwise. That is
+// not a gap in this extension: the durable record is the worker's output buffer, which
+// `sandbox-job-output` reads and `WatchJob` streams.
+//
+// So each watch gets its OWN lifetime (background context), and the set of live watches is tracked
+// so the extension can cancel them all on shutdown — otherwise a stuck worker would leak a goroutine
+// per job.
 type jobWatcher struct {
 	mu   sync.Mutex
 	live map[*watchHandle]struct{}

@@ -26,11 +26,16 @@ const maxOutputLines = 1000
  * returned on its first pass with the state still "running" — a follower waiting for a background
  * job would have stopped the moment it started looking.
  *
- * THE ERROR IS REPORTED, NOT FOLDED INTO "failed". A worker that cannot be reached has not told us
- * anything about the job; answering "failed" invents a death. The caller here is the follower, and
- * what it does with an unreachable worker is different from what it does with a failed command.
+ * THE THIRD RESULT IS "WE COULD NOT ASK", and it is separate from the state on purpose. A worker that
+ * cannot be reached has told us NOTHING about the job, and folding that into a state invents a
+ * death: the caller then reports a failed job for work that may still be running on the machine. It
+ * used to return the literal "failed" here, which is not even one of the state's words — so the tool
+ * result said "failed" while the follower, reading the same answer, mapped it to `done`.
+ *
+ * THE CONTEXT ENDING IS NOT THE JOB ENDING either, and it is not an error: a cancelled wait says
+ * nothing about the work, so the last known state comes back with ok=true.
  */
-func waitForJob(ctx context.Context, cl sandbox.WorkerClient, jobID string, budget time.Duration) (state string, code int32) {
+func waitForJob(ctx context.Context, cl sandbox.WorkerClient, jobID string, budget time.Duration) (state string, code int32, ok bool) {
 	unbounded := budget <= 0
 	deadline := time.Now().Add(budget)
 	for {
@@ -47,18 +52,16 @@ func waitForJob(ctx context.Context, cl sandbox.WorkerClient, jobID string, budg
 		}
 		res, err := cl.JobWait(ctx, &workerv1.JobWaitRequest{JobId: jobID, TimeoutMs: int32(slice.Milliseconds())})
 		if err != nil {
-			// THE CONTEXT ENDING IS NOT THE JOB ENDING. A cancelled wait says nothing about the work,
-			// so it reports the last known state rather than a terminal one.
 			if ctx.Err() != nil {
-				return "running", 0
+				return "running", 0, true
 			}
-			return "failed", -1
+			return "", 0, false
 		}
 		if res.GetState() != "running" {
-			return res.GetState(), res.GetExitCode()
+			return res.GetState(), res.GetExitCode(), true
 		}
 		if !unbounded && time.Now().After(deadline) {
-			return res.GetState(), res.GetExitCode()
+			return res.GetState(), res.GetExitCode(), true
 		}
 	}
 }
@@ -139,8 +142,9 @@ func (t *toolset) info(ctx context.Context, args map[string]any, callID, session
 //
 // So: wait up to `timeout` (default 10s, clamped to 60s), and if the command is
 // still running at the deadline, return the job id plus what it has printed so
-// far. The job keeps running, and its output keeps arriving as tool-progress, so
-// the caller can watch it live instead of blocking.
+// far. The job keeps running, and its output keeps arriving on the progress
+// subject for anything watching this call — a panel, not the model, which has
+// already received its result.
 func (t *toolset) jobStart(ctx context.Context, args map[string]any, callID, session, tenant string) (extension.ToolResultData, error) {
 	s, err := t.resolve(args, session, tenant)
 	if err != nil {
@@ -185,17 +189,39 @@ func (t *toolset) jobStart(ctx context.Context, args map[string]any, callID, ses
 		return extension.ToolResultData{}, &extension.TypedError{Code: easybus.ToolResultErrorCodeRetryable, Message: fmt.Sprintf("execute: %v", err)}
 	}
 	jobID := started.GetJobId()
-	// Relay the job's output to the UI as it arrives.
+	// Relay the job's output while it runs.
 	//
-	// Started BEFORE the wait so the caller sees output during the wait, not only
-	// after it. Best-effort: if the worker cannot be watched the job still runs and
-	// the result is unaffected.
+	// Started BEFORE the wait so a UI watching this call sees output DURING the wait rather than only
+	// after it. Best-effort: if the worker cannot be watched the job still runs and the result is
+	// unaffected.
+	//
+	// THE RELAY DOES NOT REACH THE MODEL, and never did for a backgrounded job: the turn's own relay
+	// stops when this call returns, so a command that outlives it is watched by the panel (via this
+	// subject, or its own `WatchJob` stream) and by `sandbox-job-output` afterwards. The tool result
+	// is the model's whole view.
 	//
 	// follow=false opts out for a job whose output nobody reads live.
 	if followEnabled(args) {
 		watcher.Watch(ctx, cl, jobID)
 	}
-	state, code := waitForJob(ctx, cl, jobID, time.Duration(timeoutS)*time.Second)
+	state, code, ok := waitForJob(ctx, cl, jobID, time.Duration(timeoutS)*time.Second)
+	if !ok {
+		/**
+		 * THE WORKER STOPPED ANSWERING. The job may be running perfectly well on a machine we can no
+		 * longer reach, so this is NOT a job result — it is a failed call, and saying anything about
+		 * the job's state would invent one.
+		 *
+		 * IT STILL REGISTERS THE JOB, because the process is out there: if the worker comes back, the
+		 * follower can record how it ended, and a panel can find it by id. The alternative — dropping
+		 * it — leaves a command running that nothing in the system knows about.
+		 */
+		t.trackJob(ctx, cl, s, jobID, command, session, tenant, callID)
+		return extension.ToolResultData{}, &extension.TypedError{
+			Code: easybus.ToolResultErrorCodeRetryable,
+			Message: fmt.Sprintf("job %s: the worker stopped answering, so its outcome is unknown "+
+				"(it may still be running; use job-wait or job-output to check)", jobID),
+		}
+	}
 	if state == "running" {
 		// STILL GOING: hand back the id and let a separate call wait for it.
 		//
@@ -207,7 +233,19 @@ func (t *toolset) jobStart(ctx context.Context, args map[string]any, callID, ses
 		// IT REGISTERS THE JOB FIRST, and that is not optional: the id in the reply is only useful
 		// if another tool can look it up, so a registry that is missing means the reader would get
 		// an id nobody can resolve.
-		t.trackJob(ctx, cl, s, jobID, command, session, tenant, callID)
+		//
+		// IF IT CANNOT REGISTER, THE CALL REPORTS THAT INSTEAD OF THE ID. Before this, the id was
+		// returned either way — with a warning in the log that the caller never sees — so the model
+		// was told "it is still going, watch it with job-wait" and every later call answered "no such
+		// job".
+		if !t.trackJob(ctx, cl, s, jobID, command, session, tenant, callID) {
+			return extension.ToolResultData{}, &extension.TypedError{
+				Code: easybus.ToolResultErrorCodeRetryable,
+				Message: fmt.Sprintf("job %s is still running, but it could not be added to the job "+
+					"list, so it cannot be waited on or read later; raise its `timeout` to let it finish "+
+					"in one call", jobID),
+			}
+		}
 		text, _, rerr := renderOutput(ctx, cl, jobID, 0, 200, "all")
 		if rerr != nil {
 			text = outputUnavailableNote(t, session, tenant, rerr)
@@ -302,21 +340,16 @@ func (t *toolset) jobOutput(ctx context.Context, args map[string]any, callID, se
 	if err != nil {
 		return extension.ToolResultData{}, &extension.TypedError{Code: easybus.ToolResultErrorCodeNotFound, Message: fmt.Sprintf("job-output: %v", err)}
 	}
+	// NO INTERMEDIATE STREAMS. The old engine decomposed a shell script into flows, so a pipeline's
+	// upstream output could be read even though only the last stage reached stdout; it ran a program
+	// in one language instead, whose own output is the whole of what it produced. The field that
+	// carried them was written as a constant `""` and is gone with the concept — a key that can only
+	// ever be empty reads as "supported" to anyone shaping a consumer around it.
 	body := strings.Join(res.GetLines(), "\n")
-	// THE INTERMEDIATE-STREAM GLIMPSE IS GONE WITH THE DATAFLOW GRAPH. It existed because the old
-	// engine decomposed a shell script into flows, so a pipeline's upstream output could be read even
-	// though only the last stage reached stdout. The engine now runs a program in one language and
-	// streams what it writes; there is no decomposition to inspect, and the program's own output is
-	// the whole of what it produced.
-	inter := ""
-	if inter != "" {
-		body = strings.TrimRight(body, "\n") + "\n" + inter
-	}
 	return extension.ToolResultData{
 		Content: body,
 		Data: map[string]any{
 			"lines": res.GetLines(), "totalLines": res.GetTotalLines(), "done": res.GetDone(),
-			"intermediates": inter,
 		},
 	}, nil
 }
