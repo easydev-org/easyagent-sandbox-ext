@@ -134,10 +134,22 @@ func main() {
 		},
 	})
 
+	/**
+	 * EFFECT COMES FROM THE MANIFEST, not from a second table here.
+	 *
+	 * The manifest is what a user reads and what the agent validates; restating it in Go would give every
+	 * tool two declarations that can disagree, and the one that drifts would be whichever is harder to see.
+	 */
+	effects := make(map[string]string, len(m.Tools))
+	for _, t := range m.Tools {
+		effects[t.Name] = t.Effect
+	}
+
 	specs := make(map[string]extension.ToolSpec, len(handlers))
 	for name, h := range handlers {
 		h := h
 		specs[name] = extension.ToolSpec{
+			Effect: effects[name],
 			Execute: func(ctx context.Context, args map[string]any, callID, session, tenant string) (extension.ToolResultData, error) {
 				// callID used to be dropped here. It is the only handle that ties a
 				// long-running command's progress back to the caller watching THIS
