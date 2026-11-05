@@ -8,6 +8,8 @@ lifecycle: [deleted]
 # accessibility CLI is present, native GUI automation.
 tools:
   - name: list-sandboxes
+    # lists sandboxes; nothing changes
+    effect: none
     description: >-
       List every configured sandbox with its OS and whether the accessibility CLI (a11y) is present.
     descriptions:
@@ -20,6 +22,8 @@ tools:
       required: []
     required_config: [sandboxes]
   - name: sandbox-info
+    # reads sandbox metadata
+    effect: none
     description: >-
       Show the connected easyworker's environment: OS/arch, workspace root, home dir, boot id —
       AND THE LANGUAGES IT CAN RUN, which is exactly what sandbox-job-start's `lang` accepts.
@@ -39,6 +43,8 @@ tools:
       required: []
     required_config: [sandboxes]
   - name: sandbox-job-start
+    # runs an arbitrary command: what it touches is decided by the command
+    effect: high
     description: >-
       Run a command in a named language and wait up to `timeout` seconds (default 10, max 60).
       Returns the job id plus the output when it finishes. If it is still running
@@ -103,6 +109,8 @@ tools:
     required_config: [sandboxes]
     requires: [exec]
   - name: sandbox-job-output
+    # reads a job's output
+    effect: none
     description: >-
       Read a window of a job's output lines. Paged by LINE (offset/limit), and
       filterable by stream (stdout, stderr, all).
@@ -135,6 +143,8 @@ tools:
       required: [job-id]
     required_config: [sandboxes]
   - name: sandbox-job-cancel
+    # kills a running job; work in progress is lost
+    effect: medium
     description: >-
       Stop a running job and its whole process tree. Returns once the worker has
       accepted the kill, so a failure to cancel is reported rather than assumed
@@ -155,6 +165,8 @@ tools:
     required_config: [sandboxes]
     requires: [exec]
   - name: sandbox-file-read
+    # reads a file from the sandbox
+    effect: none
     description: >-
       Read a text file (line-numbered). Binary files are rejected.
     descriptions:
@@ -190,6 +202,8 @@ tools:
     # The end-to-end test caught it: it reads after writing, passes `file.write` for the write and
     # nothing for the read — which is what the manifest claimed to want — and was refused.
   - name: sandbox-file-list
+    # lists a directory
+    effect: none
     description: >-
       List a directory tree (breadth-first, up to `depth` levels).
     descriptions:
@@ -216,6 +230,8 @@ tools:
       required: []
     required_config: [sandboxes]
   - name: sandbox-file-patch
+    # rewrites files inside this sandbox; nothing outside it changes
+    effect: low
     description: >-
       Create, edit and delete files from ONE patch document. This is the only tool that
       writes: it replaces the separate write, delete, move and copy tools, which did the
@@ -275,6 +291,8 @@ tools:
     required_config: [sandboxes]
     requires: [file.write]
   - name: sandbox-download
+    # copies bytes out; no state changes
+    effect: none
     description: >-
       Download a sandbox file into the agent file store, returning a file:<code>.
     descriptions:
@@ -291,6 +309,8 @@ tools:
       required: [path]
     required_config: [sandboxes]
   - name: sandbox-upload
+    # writes a file into this sandbox
+    effect: low
     description: >-
       Upload an agent file:<code> into a sandbox path.
     descriptions:
@@ -313,6 +333,8 @@ tools:
     required_config: [sandboxes]
     requires: [file.write]
   - name: computer-info
+    # reads the desktop state
+    effect: none
     description: >-
       Report the GUI platform/driver and available tools of a sandbox.
     descriptions:
@@ -325,6 +347,8 @@ tools:
       required: []
     required_config: [sandboxes]
   - name: computer-apps
+    # lists installed applications
+    effect: none
     description: >-
       List the running GUI applications (focused marked).
     descriptions:
@@ -337,6 +361,8 @@ tools:
       required: []
     required_config: [sandboxes]
   - name: computer-snapshot
+    # reads a snapshot of the screen
+    effect: none
     description: >-
       Dump the accessibility tree (already formatted for a model).
     descriptions:
@@ -358,6 +384,8 @@ tools:
       required: []
     required_config: [sandboxes]
   - name: computer-find
+    # finds an element in a snapshot
+    effect: none
     description: >-
       Match elements by an accessibility selector.
     descriptions:
@@ -384,6 +412,8 @@ tools:
       required: [selector]
     required_config: [sandboxes]
   - name: computer-action
+    # performs an arbitrary desktop action
+    effect: high
     description: >-
       Perform an accessibility action on a target ref/selector.
     descriptions:
@@ -410,6 +440,8 @@ tools:
       required: [action, target]
     required_config: [sandboxes]
   - name: computer-click
+    # clicks wherever it is told; the page decides the consequence
+    effect: high
     description: >-
       Click at screen coordinates.
     descriptions:
@@ -441,6 +473,8 @@ tools:
       required: [x, y]
     required_config: [sandboxes]
   - name: computer-type
+    # types into whatever has focus
+    effect: high
     description: >-
       Type text (optionally focusing a target first).
     descriptions:
@@ -462,6 +496,8 @@ tools:
       required: [text]
     required_config: [sandboxes]
   - name: computer-key
+    # sends a key to whatever has focus
+    effect: high
     description: >-
       Press a key (with optional modifiers held).
     descriptions:
@@ -483,6 +519,8 @@ tools:
       required: [key]
     required_config: [sandboxes]
   - name: computer-scroll
+    # scrolls; may load and act on unseen content
+    effect: high
     description: >-
       Scroll at a position.
     descriptions:
@@ -514,6 +552,8 @@ tools:
       required: []
     required_config: [sandboxes]
   - name: computer-drag
+    # drags between arbitrary points
+    effect: high
     description: >-
       Drag from one position to another.
     descriptions:
@@ -550,6 +590,8 @@ tools:
       required: [from_x, from_y, to_x, to_y]
     required_config: [sandboxes]
   - name: computer-screenshot
+    # captures the screen
+    effect: none
     description: >-
       Capture the screen and return a PNG.
     descriptions:
@@ -621,6 +663,8 @@ permissions:
 
 config:
   - name: sandboxes
+    # reads the sandbox list
+    effect: none
     # A real FORM, not a JSON blob.
     #
     # This used to be `type: string` with a description telling the user to type
